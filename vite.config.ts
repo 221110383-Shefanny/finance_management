@@ -4,7 +4,7 @@
   import path from 'path';
 
   export default defineConfig({
-    base: process.env.NODE_ENV === 'production' ? '/waruna8/' : '/',
+    base: './',
     plugins: [react()],
     resolve: {
       extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
