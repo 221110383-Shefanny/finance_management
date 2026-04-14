@@ -1846,10 +1846,10 @@ export default function ShipmentRequest({
 
                         {/* Monitoring button */}
                         <Button
-                          onClick={(e) => {
+                          onClick={(e: any) => {
                             e.stopPropagation();
                             setSelectedDetail(item);
-                            setShowPOMonitoringDialog(true);
+                            setShowMonitoringDialog(true);
                           }}
                           className="bg-purple-600 hover:bg-purple-700"
                         >
@@ -4083,6 +4083,19 @@ export default function ShipmentRequest({
         mockShipmentRequest={shipmentRequestData}
         mockPurchaseOrder={mockPurchaseOrder}
         pvrData={pvrData}
+      />
+
+      <DocumentMonitoringDialog
+        open={showMonitoringDialog}
+        onOpenChange={setShowMonitoringDialog}
+        po={mockPurchaseOrder?.find((po: any) => po.poNumber === selectedDetail?.poNo) || { poNumber: selectedDetail?.poNo }}
+        mockItems={getLinkedPOData(selectedDetail || {} as any)?.mockItems || []}
+        isPOCreated={(poNumber: string) => mockPurchaseOrder?.some((po: any) => po.poNumber === poNumber) || false}
+        getEffectivePOStatus={(po: any, items: any[]) => po?.status || "Draft"}
+        formatDateToDDMMYYYY={formatDateToDDMMYYYY}
+        piNumber={selectedDetail?.invoiceNo || ""}
+        formatCurrency={formatCurrency}
+        initialActiveStep="po"
       />
     </div>
 
