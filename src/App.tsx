@@ -69,7 +69,7 @@ import { getDocumentTracking, DocumentTracking } from "./utils/documentTracking"
 import { mockPurchaseOrder, mockExpenseNote, mockImportCosts, mockpurchaseInvoice, mockShipmentRequest, mockpurchaseReturns, mockPV2, mockPVR, mockPV, mockReimburseWithoutPO, initializeMockPVRData, initializeMockPVData } from "./mocks/mockData";
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState("SHIPMENT REQUEST");
+  const [activeTab, setActiveTab] = useState("PAYMENT VOUCHER (VER 2)");
   const [isOpen, setIsOpen] = useState(false);
   const [isPinned, setIsPinned] = useState(false);
   const [currentPICName, setCurrentPICName] =

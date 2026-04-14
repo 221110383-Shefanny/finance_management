@@ -1,5 +1,6 @@
 ﻿import React, { useState, useEffect } from "react";
 import { motion } from "motion/react";
+import { DocumentMonitoringDialog } from "./DocumentMonitoringDialog";
 import {
   formatDateToDDMMYYYY,
   getTodayYYYYMMDD,
@@ -7,7 +8,7 @@ import {
   convertDDMMYYYYtoYYYYMMDD,
   isValidDate,
 } from "../utils/dateFormat";
-import { formatNumber, parseFormattedNumber } from "../utils/numberFormat";
+import { formatCurrency, formatNumber, parseFormattedNumber } from "../utils/numberFormat";
 import {
   mockLinkedPOs,
   mockpurchaseInvoice,
@@ -314,6 +315,7 @@ export default function PV({
   onNavigateToPV,
   onNavigateToReimburse,
 }: PVProps) {
+  const [showMonitoringDialog, setShowMonitoringDialog] = useState(false);
   // Helper function to get document type label from code
   const getDocumentTypeLabel = (docOrType: string | any): string => {
     // If documentTypeLabel exists, use it first
@@ -2160,6 +2162,19 @@ export default function PV({
                           <span className="flex-1 text-center">
                             Approve
                           </span>
+                        </Button>
+
+                        {/* Monitoring button */}
+                        <Button
+                          onClick={(e: any) => {
+                            e.stopPropagation();
+                            setSelectedDetail(pv);
+                            setShowMonitoringDialog(true);
+                          }}
+                          className="bg-purple-600 hover:bg-purple-700"
+                        >
+                          <Receipt className="w-4 h-4 mr-2" />
+                          Monitoring
                         </Button>
 
                         {/* Void Button */}
@@ -11810,6 +11825,26 @@ export default function PV({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <DocumentMonitoringDialog
+        open={showMonitoringDialog}
+        onOpenChange={setShowMonitoringDialog}
+        po={mockPurchaseOrder?.find((po: any) => po.purchaseOrderNo === selectedDetail?.poNumber) || { purchaseOrderNo: selectedDetail?.poNumber || "N/A" }}
+        isPOCreated={(poNumber: string) => mockPurchaseOrder?.some((po: any) => po.purchaseOrderNo === poNumber) || false}
+        getEffectivePOStatus={(po: any, items: any[]) => po?.status || "Draft"}
+        formatDateToDDMMYYYY={formatDateToDDMMYYYY}
+        piNumber={selectedDetail?.linkedDocs?.find((d: any) => d.documentType === "PI")?.piNo || ""}
+        icNumber={selectedDetail?.linkedDocs?.find((d: any) => d.documentType === "IC")?.piNo || ""}
+        linkedPI={{
+          purchaseInvoiceNo: selectedDetail?.linkedDocs?.find((d: any) => d.documentType === "PI")?.piNo || "",
+          prNo: selectedDetail?.linkedDocs?.find((d: any) => d.documentType === "PR")?.piNo || "",
+          enNo: selectedDetail?.linkedDocs?.find((d: any) => d.documentType === "EN")?.piNo || "",
+          srNum: selectedDetail?.linkedDocs?.find((d: any) => d.documentType === "SR")?.piNo || "",
+          icNum: selectedDetail?.linkedDocs?.find((d: any) => d.documentType === "IC")?.piNo || "",
+          pvNo: (() => { try { const pvs = JSON.parse(localStorage.getItem("pvData") || "[]"); return pvs.find((pv: any) => pv.pvrNo === selectedDetail?.pvrNo)?.pvNo || ""; } catch { return ""; } })(),
+        }}
+        formatCurrency={formatCurrency}
+        initialActiveStep="pv"
+      />
     </div>
   );
 }

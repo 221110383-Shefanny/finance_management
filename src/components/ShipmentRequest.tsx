@@ -4095,7 +4095,7 @@ export default function ShipmentRequest({
         formatDateToDDMMYYYY={formatDateToDDMMYYYY}
         piNumber={selectedDetail?.invoiceNo || ""}
         formatCurrency={formatCurrency}
-        initialActiveStep="po"
+        initialActiveStep="sr"
       />
     </div>
 

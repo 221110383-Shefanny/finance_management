@@ -2,6 +2,7 @@
   import type { ReactNode } from "react";
   import { createPortal } from "react-dom";
   import { motion, AnimatePresence } from "motion/react";
+  import { DocumentMonitoringDialog } from "./DocumentMonitoringDialog";
   import {
     formatDateToDDMMYYYY as formatDate,
     getTodayDDMMYYYY,
@@ -108,6 +109,7 @@ import {
   mockpurchaseInvoice,
   mockImportCosts,
   mockShipmentRequest,
+  mockPurchaseOrder,
 } from "../mocks/mockData";
 import ShipmentRequest from "./ShipmentRequest";
 import type { APNoteDataFromSR } from "./ShipmentRequest";
@@ -474,6 +476,7 @@ export default function APNote({
   selectedICNo,
   selectedAPNoteNo,
 }: APNoteProps) {
+  const [showMonitoringDialog, setShowMonitoringDialog] = useState(false);
   const [view, setView] = useState<"dashboard" | "work">(
     "work",
   );
@@ -3024,6 +3027,19 @@ export default function APNote({
                                   >
                                     <LinkIcon className="w-4 h-4 mr-2" />
                                     Link
+                                  </Button>
+
+                                  {/* Monitoring button */}
+                                  <Button
+                                    onClick={(e: any) => {
+                                      e.stopPropagation();
+                                      setSelectedDetail(item);
+                                      setShowMonitoringDialog(true);
+                                    }}
+                                    className="bg-purple-600 hover:bg-purple-700"
+                                  >
+                                    <Receipt className="w-4 h-4 mr-2" />
+                                    Monitoring
                                   </Button>
 
                                   {/* Void Button */}
@@ -10390,6 +10406,20 @@ export default function APNote({
             />
           </TabsContent>
         </Tabs>
+        <DocumentMonitoringDialog
+        open={showMonitoringDialog}
+        onOpenChange={setShowMonitoringDialog}
+        po={mockPurchaseOrder?.find((po: any) => po.poNumber === selectedDetail?.poNo) || { poNumber: selectedDetail?.poNo }}
+      
+        isPOCreated={(poNumber: string) => mockPurchaseOrder?.some((po: any) => po.poNumber === poNumber) || false}
+        getEffectivePOStatus={(po: any, items: any[]) => po?.status || "Draft"}
+        formatDateToDDMMYYYY={formatDateToDDMMYYYY}
+        piNumber={selectedDetail?.invoiceNo || ""}
+        formatCurrency={formatCurrency}
+        initialActiveStep="en"
+      />
       </div>
+      
     );
+      
   }
