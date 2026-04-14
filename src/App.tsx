@@ -23,6 +23,7 @@ import {
   Check,
   X,
   Bell,
+  ArrowLeft,
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "./components/ui/avatar";
 import {
@@ -57,13 +58,18 @@ import APNote from "./components/APNote";
 import ShipmentRequest from "./components/ShipmentRequest";
 import PVR from "./components/PVR";
 import PV from "./components/PV";
+import PaymentVoucherV2 from "./components/PaymentVoucherV2";
 import ReimburseWithoutPO from "./components/ReimburseWithoutPO";
+import InvoiceReceipt from "./components/InvoiceReceipt";
 import EmptyTab from "./components/EmptyTab";
+import { DocumentMonitoringDialog } from "./components/DocumentMonitoringDialog";
+import { DocumentTrackingDisplay } from "./components/DocumentTrackingDisplay";
 import { Toaster } from "./components/ui/sonner";
-import { mockPurchaseOrder, mockExpenseNote, mockImportCosts, mockpurchaseInvoice, initializeMockPVRData, initializeMockPVData } from "./mocks/mockData";
+import { getDocumentTracking, DocumentTracking } from "./utils/documentTracking";
+import { mockPurchaseOrder, mockExpenseNote, mockImportCosts, mockpurchaseInvoice, mockShipmentRequest, mockpurchaseReturns, mockPV2, mockPVR, mockPV, mockReimburseWithoutPO, initializeMockPVRData, initializeMockPVData } from "./mocks/mockData";
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState("PAYMENT VOUCHER");
+  const [activeTab, setActiveTab] = useState("SHIPMENT REQUEST");
   const [isOpen, setIsOpen] = useState(false);
   const [isPinned, setIsPinned] = useState(false);
   const [currentPICName, setCurrentPICName] =
@@ -80,10 +86,14 @@ export default function App() {
   const [selectedAPNoteNo, setSelectedAPNoteNo] = useState<
     string | null
   >(null);
+  const [selectedReimburseNo, setSelectedReimburseNo] = useState<
+    string | null
+  >(null);
+  const [selectedInvoiceReceiptNo, setSelectedInvoiceReceiptNo] = useState<string | null>(null);
   const [pvrData, setPvrData] = useState<any[]>([]);
   const [showFloatingDialog, setShowFloatingDialog] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState<"All" | "Pending" | "Done" | "Pending > 2 Days">("All");
-  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<"All" | "Purchasing" | "Logistic">("All");
+  const [selectedCategoryFilter, setSelectedCategoryFilter] =   useState<"All" | "Purchasing" | "Logistic">("All");
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string | null>(null);
   const [showChatDialog, setShowChatDialog] = useState(false);
   const [chatMessagesByWarehouse, setChatMessagesByWarehouse] = useState<{[key: string]: any[]}>({});
@@ -94,6 +104,11 @@ export default function App() {
   const [isDocumentsExpanded, setIsDocumentsExpanded] = useState(false);
   const [countdownTimers, setCountdownTimers] = useState<{[key: string]: number}>({});
   const [refreshKey, setRefreshKey] = useState(0);
+  const [floatingDialogTab, setFloatingDialogTab] = useState<"tracker" | "notification">("tracker");
+  const [showTrackerMonitoringDialog, setShowTrackerMonitoringDialog] = useState(false);
+  const [trackerSearchInput, setTrackerSearchInput] = useState("");
+  const [selectedTrackerDocument, setSelectedTrackerDocument] = useState<any>(null);
+  const [documentTracking, setDocumentTracking] = useState<DocumentTracking | null>(null);
 
   // Initialize mock PVR data to localStorage on app load (MUST run before any component tries to create PVR)
   useEffect(() => {
@@ -110,7 +125,8 @@ export default function App() {
     try {
       const existingAPNotes = JSON.parse(localStorage.getItem("createdAPNotes") || "[]");
       
-      // Check if the mock AP note already exists by apNoteNo
+      // Check if the mock AP note alrea
+      // dy exists by apNoteNo
       const mockAPNoteNumbers = mockExpenseNote.map(note => note.apNoteNo);
       const missingMockNotes = mockExpenseNote.filter(
         mockNote => !existingAPNotes.some((existing: any) => existing.apNoteNo === mockNote.apNoteNo)
@@ -233,6 +249,100 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // Close DocumentTrackingDisplay when switching tabs (not in notification or floating dialog closes)
+  useEffect(() => {
+    if (floatingDialogTab === "tracker" || !showFloatingDialog) {
+      setDocumentTracking(null);
+      setSelectedTrackerDocument(null);
+    }
+  }, [floatingDialogTab, showFloatingDialog]);
+
+  // Set up global navigation event listeners
+  useEffect(() => {
+    const handleReimburseEvent = (event: any) => {
+      // Just set state directly — don't call handleNavigateToReimburse to avoid re-dispatching
+      setSelectedReimburseNo(event.detail.reimburseNo);
+      setActiveTab("REIMBURSE WITHOUT PO");
+    };
+
+    const handlePOEvent = (event: any) => {
+      handleNavigateToPurchaseOrder(event.detail.poNo);
+    };
+
+    const handleChangeTabEvent = (event: any) => {
+      setActiveTab(event.detail.tab);
+    };
+
+    const handleIREvent = (event: any) => {
+      setSelectedInvoiceReceiptNo(event.detail.irNo);
+      setActiveTab("INVOICE RECEIPT");
+    };
+
+    const handlePIEvent = (event: any) => {
+      setSelectedPurchaseInvoiceNo(event.detail.piNo);
+      setActiveTab("PURCHASE INVOICE");
+    };
+
+    window.addEventListener("navigateToReimburse" as any, handleReimburseEvent);
+    window.addEventListener("navigateToPurchaseOrder" as any, handlePOEvent);
+    window.addEventListener("changeTab" as any, handleChangeTabEvent);
+    window.addEventListener("navigateToInvoiceReceipt" as any, handleIREvent);
+    window.addEventListener("navigateToPurchaseInvoice" as any, handlePIEvent);
+
+    return () => {
+      window.removeEventListener("navigateToReimburse" as any, handleReimburseEvent);
+      window.removeEventListener("navigateToPurchaseOrder" as any, handlePOEvent);
+      window.removeEventListener("changeTab" as any, handleChangeTabEvent);
+      window.removeEventListener("navigateToInvoiceReceipt" as any, handleIREvent);
+      window.removeEventListener("navigateToPurchaseInvoice" as any, handlePIEvent);
+    };
+  }, []);
+
+  /**
+   * Detect document type based on document number format or data structure
+   */
+  const detectDocumentType = (doc: any): string => {
+    if (!doc) return 'Unknown';
+    
+    // Check by document number prefix
+    if (doc.poNo || doc.piNo) {
+      // It's a PI if it has piNo
+      if (doc.piNo) {
+        // Check if there's a linked PO to determine if we should show PO tracking instead
+        if (doc.noPO) {
+          const linkedPO = mockPurchaseOrder.find(po => po.purchaseOrderNo === doc.noPO || po.poId === doc.poId);
+          // If it's from a search result or raw mock data, check docType field
+          if (doc.docType === 'PO') return 'PO';
+          // Otherwise treat as PI for tracking purposes (PI is supplied date perspective)
+          return 'PI';
+        }
+        return 'PI';
+      }
+      if (doc.poNo) return 'PO';
+      if (doc.poId) return 'PO';
+    }
+    
+    // Check by document number prefix pattern
+    const docNo = doc.docNo || doc.piNo || doc.poNo || '';
+    if (docNo.startsWith('PO/')) return 'PO';
+    if (docNo.match(/^STI[A-Z]\d+/)) return 'PI'; // STID..., STIE..., STIC...
+    if (docNo.startsWith('IMP/')) return 'IC'; // Import Cost
+    if (docNo.startsWith('PR/')) return 'PR'; // Purchase Return
+    if (docNo.match(/^SR\/|^\d+\/XI\/SR/)) return 'SR'; // Shipment Request
+    if (docNo.startsWith('AP/')) return 'EN'; // Expense Note (AP Note)
+    if (docNo.startsWith('PVR/')) return 'PVR'; // Payment Voucher Request
+    if (docNo.startsWith('PV/')) return 'PV'; // Payment Voucher
+    
+    // Fallback based on data structure
+    if (doc.piId || doc.purchaseInvoiceNo) return 'PI';
+    if (doc.poId || doc.purchaseOrderNo) return 'PO';
+    if (doc.icId || doc.icNum) return 'IC';
+    if (doc.returId || doc.prNo) return 'PR';
+    if (doc.srId || doc.srNum) return 'SR';
+    
+    return 'PI'; // Default to PI
+  };
+
   const picNames = [
     "SHEFANNY",
     "DEWI",
@@ -251,6 +361,7 @@ export default function App() {
   const menuItems = [
     { name: "DASHBOARD", icon: LayoutDashboard },
     { name: "REIMBURSE WITHOUT PO", icon: Receipt },
+    { name: "INVOICE RECEIPT", icon: Receipt },
     { name: "PURCHASE ORDER", icon: FileText },
     { name: "PURCHASE INVOICE", icon: Receipt },
     { name: "PURCHASE RETURN", icon: Receipt },
@@ -259,6 +370,7 @@ export default function App() {
     { name: "EXPENSES NOTE", icon: FileCheck },
     { name: "PAYMENT VOUCHER REQUEST", icon: CreditCard },
     { name: "PAYMENT VOUCHER", icon: Wallet },
+    { name: "PAYMENT VOUCHER (VER 2)", icon: Wallet },
   ];
 
   const handleNavigateToPurchaseInvoice = (
@@ -266,22 +378,6 @@ export default function App() {
   ) => {
     setSelectedPurchaseInvoiceNo(documentNo);
     setActiveTab("PURCHASE INVOICE");
-
-    // Dispatch event to trigger auto-expand in PurchaseInvoice component
-    // Use longer delay (300ms) to ensure component is rendered with data
-    setTimeout(() => {
-      const event = new CustomEvent(
-        "navigateToPurchaseInvoice",
-        {
-          detail: { piNo: documentNo },
-        },
-      );
-      window.dispatchEvent(event);
-      console.log(
-        "✅ navigateToPurchaseInvoice event dispatched for:",
-        documentNo,
-      );
-    }, 300);
   };
 
   const handleNavigateToPurchaseOrder = (
@@ -302,19 +398,31 @@ export default function App() {
     setSelectedPurchaseOrderNo(poId);
     setActiveTab("PURCHASE ORDER");
 
-    // Dispatch event to trigger auto-expand in PurchaseOrder component
-    // Use longer delay (300ms) to ensure component is rendered with data
-    setTimeout(() => {
-      const event = new CustomEvent("navigateToPurchaseOrder", {
-        detail: { poNo: documentNo },
-      });
-      window.dispatchEvent(event);
-      console.log(
-        "✅ navigateToPurchaseOrder event dispatched for:",
-        documentNo,
-      );
-    }, 300);
+    // Don't dispatch event again here - the PurchaseOrder component has its own listener
+    // that handles navigation based on the selectedPurchaseOrderNo prop change
+    console.log(
+      "✅ Navigating to Purchase Order:",
+      documentNo,
+    );
   };
+
+const handleNavigateToReimburse = (reimburseNo: string) => {
+  console.log("🎯 [APP] Navigation to Reimburse:", reimburseNo);
+  
+  // Set the selected reimburse document
+  setSelectedReimburseNo(reimburseNo);
+  // Set the tab
+  setActiveTab("REIMBURSE WITHOUT PO");
+
+  // Dispatch event after delay so ReimburseWithoutPO component can auto-expand
+  setTimeout(() => {
+    window.dispatchEvent(
+      new CustomEvent("navigateToReimburse", {
+        detail: { reimburseNo },
+      }),
+    );
+  }, 300);
+};
 
   const handleNavigateToImportCost = (documentNo: string) => {
     setSelectedImportCostNo(documentNo);
@@ -384,6 +492,21 @@ export default function App() {
       console.log(
         "✅ navigateToPVR event dispatched for:",
         pvrNo,
+      );
+    }, 300);
+  };
+
+  const handleNavigateToPaymentVoucher = (pvrNo: string, pvrId: string, pvrData?: any) => {
+    console.log("🎯 handleNavigateToPaymentVoucher called with:", { pvrNo, pvrId, pvrData });
+    setActiveTab("PAYMENT VOUCHER REQUEST");
+    setTimeout(() => {
+      const event = new CustomEvent("navigateToPaymentVoucher", {
+        detail: { pvrNo, pvrId, pvrData },
+      });
+      window.dispatchEvent(event);
+      console.log(
+        "✅ navigateToPaymentVoucher event dispatched for:",
+        { pvrNo, pvrId, pvrData },
       );
     }, 300);
   };
@@ -565,13 +688,227 @@ const getFilteredDocuments = () => {
   }
 };
 
+// Search function for tracker documents
+const getTrackerSearchResults = (searchTerm: string) => {
+  if (!searchTerm.trim()) return [];
+  
+  const term = searchTerm.toLowerCase();
+  const results: any[] = [];
+  
+  // Search through Purchase Orders
+  mockPurchaseOrder.forEach((po: any) => {
+    if (po.purchaseOrderNo?.toLowerCase().includes(term) || 
+        po.supplierName?.toLowerCase().includes(term)) {
+      results.push({
+        id: `po_${po.poId}`,
+        type: "Purchase Order",
+        docNo: po.purchaseOrderNo,
+        displayName: po.purchaseOrderNo,
+        supplier: po.supplierName,
+        date: po.createDate,
+        amount: po.grandTotal,
+        currency: po.currency,
+        data: po,
+        docType: "PO"
+      });
+    }
+  });
+  
+  // Search through Purchase Invoices
+  mockpurchaseInvoice.forEach((pi: any) => {
+    if (pi.purchaseInvoiceNo?.toLowerCase().includes(term) || 
+        pi.supplierName?.toLowerCase().includes(term)) {
+      results.push({
+        id: `pi_${pi.piId}`,
+        type: "Purchase Invoice",
+        docNo: pi.purchaseInvoiceNo,
+        displayName: pi.purchaseInvoiceNo,
+        supplier: pi.supplierName,
+        date: pi.referenceDate,
+        amount: pi.grandTotal,
+        currency: pi.currency,
+        data: pi,
+        docType: "PI"
+      });
+    }
+  });
+  
+  // Search through Purchase Returns
+  mockpurchaseReturns.forEach((pr: any) => {
+    if (pr.prNo?.toLowerCase().includes(term) || 
+        pr.supplierName?.toLowerCase().includes(term)) {
+      results.push({
+        id: `pr_${pr.returId}`,
+        type: "Purchase Return",
+        docNo: pr.prNo,
+        displayName: pr.prNo,
+        supplier: pr.supplierName,
+        date: pr.returnCreatedDate,
+        amount: pr.totalReturnAmount,
+        currency: pr.currency,
+        data: pr,
+        docType: "PR"
+      });
+    }
+  });
+  
+  // Search through Import Costs
+  mockImportCosts.forEach((ic: any) => {
+    if (ic.icNum?.toLowerCase().includes(term) || 
+        ic.supplierName?.toLowerCase().includes(term)) {
+      results.push({
+        id: `ic_${ic.icId}`,
+        type: "Import Cost",
+        docNo: ic.icNum,
+        displayName: ic.icNum,
+        supplier: ic.supplierName,
+        date: ic.icDate,
+        amount: ic.totalImportCost,
+        currency: ic.currency,
+        data: ic,
+        docType: "IC"
+      });
+    }
+  });
+  
+  // Search through Shipment Requests
+  mockShipmentRequest.forEach((sr: any) => {
+    if (sr.srNum?.toLowerCase().includes(term) || 
+        sr.supplierName?.toLowerCase().includes(term)) {
+      results.push({
+        id: `sr_${sr.srId}`,
+        type: "Shipment Request",
+        docNo: sr.srNum,
+        displayName: sr.srNum,
+        supplier: sr.supplierName,
+        date: sr.submittedDate,
+        amount: sr.totalShipmentRequest,
+        currency: sr.currency,
+        data: sr,
+        docType: "SR"
+      });
+    }
+  });
+  
+  // Search through Expense Notes
+  mockExpenseNote.forEach((en: any) => {
+    if (en.apNoteNo?.toLowerCase().includes(term) || 
+        en.supplierName?.toLowerCase().includes(term)) {
+      results.push({
+        id: `en_${en.apnoteId}`,
+        type: "Expense Note",
+        docNo: en.apNoteNo,
+        displayName: en.apNoteNo,
+        supplier: en.supplierName,
+        date: en.apNoteCreateDate,
+        amount: en.totalInvoice,
+        currency: en.currency,
+        data: en,
+        docType: "EN"
+      });
+    }
+  });
+  
+  // Search through Payment Voucher Returns
+  mockPVR.forEach((pvr: any) => {
+    if (pvr.pvrNo?.toLowerCase().includes(term) || 
+        pvr.supplierName?.toLowerCase().includes(term)) {
+      results.push({
+        id: `pvr_${pvr.pvrid}`,
+        type: "Payment Voucher Return",
+        docNo: pvr.pvrNo,
+        displayName: pvr.pvrNo,
+        supplier: pvr.supplierName,
+        date: pvr.pvrDate,
+        amount: pvr.totalPVR,
+        currency: pvr.currency,
+        data: pvr,
+        docType: "PVR"
+      });
+    }
+  });
+  
+  // Search through Payment Vouchers
+  mockPV.forEach((pv: any) => {
+    if (pv.pvNo?.toLowerCase().includes(term) || 
+        pv.supplierName?.toLowerCase().includes(term)) {
+      results.push({
+        id: `pv_${pv.pvid}`,
+        type: "Payment Voucher",
+        docNo: pv.pvNo,
+        displayName: pv.pvNo,
+        supplier: pv.supplierName,
+        date: pv.pvDate,
+        amount: pv.totalPVR,
+        currency: pv.currency,
+        data: pv,
+        docType: "PV"
+      });
+    }
+  });
+  
+  // Search through Payment Vouchers V2
+  mockPV2.forEach((pv: any) => {
+    if (pv.pvNo?.toLowerCase().includes(term) || 
+        pv.pvCode?.toLowerCase().includes(term)) {
+      results.push({
+        id: `pv2_${pv.pvId}`,
+        type: "Payment Voucher V2",
+        docNo: pv.pvNo,
+        displayName: pv.pvNo,
+        supplier: pv.pvCode,
+        date: pv.createdDate,
+        amount: pv.totalAmount,
+        currency: pv.currency,
+        data: pv,
+        docType: "PV2"
+      });
+    }
+  });
+  
+  // Search through Reimburse Without PO
+  mockReimburseWithoutPO.forEach((reim: any) => {
+    if (reim.reimburseNo?.toLowerCase().includes(term) || 
+        reim.supplierName?.toLowerCase().includes(term)) {
+      results.push({
+        id: `reim_${reim.reimId}`,
+        type: "Reimburse Without PO",
+        docNo: reim.reimburseNo,
+        displayName: reim.reimburseNo,
+        supplier: reim.supplierName,
+        date: reim.createDate,
+        amount: reim.grandTotal,
+        currency: "IDR",
+        data: reim,
+        docType: "REIM"
+      });
+    }
+  });
+  
+  return results.slice(0, 10); // Return max 10 results
+};
 
   const renderContent = () => {
     switch (activeTab) {
       case "DASHBOARD":
         return <Dashboard />;
       case "REIMBURSE WITHOUT PO":
-        return <ReimburseWithoutPO />;
+        return (
+          <ReimburseWithoutPO
+            selectedReimburseNo={selectedReimburseNo}
+            onNavigateToPurchaseOrder={handleNavigateToPurchaseOrder}
+            onNavigateToPaymentVoucher={(pvNo: string) => {
+              console.log("🎯 handleNavigateToPV (from Reimburse) called with:", pvNo);
+              setActiveTab("PAYMENT VOUCHER (VER 2)");
+              setTimeout(() => {
+                const event = new CustomEvent("navigateToPaymentVoucher", {
+                  detail: { pvNo },
+                });
+                window.dispatchEvent(event);
+              }, 300);
+            }}
+          />
+        );
       case "PURCHASE ORDER":
         return (
           <PurchaseOrder
@@ -591,6 +928,7 @@ const getFilteredDocuments = () => {
             onNavigateToAPNote={handleNavigateToAPNote}
             onNavigateToPurchaseReturn={handleNavigateToPurchaseReturn}
             onNavigateToPV={handleNavigateToPV}
+            onNavigateToReimburse={handleNavigateToReimburse}
             refreshKey={refreshKey}
           />
         );
@@ -609,6 +947,8 @@ const getFilteredDocuments = () => {
             refreshKey={refreshKey}
           />
         );
+      case "INVOICE RECEIPT":
+        return <InvoiceReceipt selectedInvoiceReceiptNo={selectedInvoiceReceiptNo} />;
       case "PURCHASE RETURN":
         return (
           <PurchaseReturn
@@ -703,6 +1043,17 @@ const getFilteredDocuments = () => {
             onNavigateToPVR={handleNavigateToPVR}
             onNavigateToAPNote={handleNavigateToAPNote}
             onNavigateToPurchaseReturn={handleNavigateToPurchaseReturn}
+          />
+        );
+      case "PAYMENT VOUCHER (VER 2)":
+        return (
+          <PaymentVoucherV2
+            onNavigateToPurchaseInvoice={handleNavigateToPurchaseInvoice}
+            onNavigateToPurchaseOrder={handleNavigateToPurchaseOrder}
+            onNavigateToImportCost={handleNavigateToImportCost}
+            onNavigateToShipmentRequest={handleNavigateToShipmentRequest}
+            onNavigateToAPNote={handleNavigateToAPNote}
+            onNavigateToReimburse={handleNavigateToReimburse}
           />
         );
       default:
@@ -833,6 +1184,13 @@ const getFilteredDocuments = () => {
                     key={item.name}
                     onClick={() => {
                       setActiveTab(item.name);
+                      // Clear all selected document numbers so pages load normally
+                      setSelectedPurchaseOrderNo(null);
+                      setSelectedPurchaseInvoiceNo(null);
+                      setSelectedImportCostNo(null);
+                      setSelectedAPNoteNo(null);
+                      setSelectedReimburseNo(null);
+                      setSelectedInvoiceReceiptNo(null);
                       if (!isPinned) {
                         setIsOpen(false);
                       }
@@ -870,7 +1228,7 @@ const getFilteredDocuments = () => {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top Bar */}
-        <header className="bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm">
+        <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
           <div className="px-4 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Button
@@ -1588,25 +1946,215 @@ const getFilteredDocuments = () => {
       </Dialog>
 
       {/* Floating Dialog - Document Tracker */}
-      <Dialog open={showFloatingDialog} onOpenChange={setShowFloatingDialog}>
+      <Dialog open={showFloatingDialog} onOpenChange={(open) => {
+        setShowFloatingDialog(open);
+        if (!open) {
+          setFloatingDialogTab("tracker");
+        }
+      }}>
         <DialogContent className="w-[1800px] h-[800px] flex flex-col overflow-hidden p-0">
-          {/* Header */}
-          <DialogHeader className="border-b border-gray-200 px-4 py-3 rounded-t-lg bg-gradient-to-r from-purple-50 to-purple-100">
+          {/* Header with Button Menu Tabs */}
+          <div className="border-b border-gray-200 px-4 py-3 rounded-t-lg bg-gradient-to-r from-purple-50 to-purple-100">
+            <div className="flex items-center gap-2 mb-3">
+              <button
+                onClick={() => {
+                  // Reset view when switching to tracker tab
+                  setFloatingDialogTab("tracker");
+                  setShowTrackerMonitoringDialog(false);
+                  setSelectedTrackerDocument(null);
+                  setDocumentTracking(null);
+                  setTrackerSearchInput("");
+                }}
+                className={`px-4 py-2 rounded-lg font-medium transition-all text-sm ${
+                  floatingDialogTab === "tracker"
+                    ? "bg-purple-600 text-white shadow-md"
+                    : "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50"
+                }`}
+              >
+                Document Tracker
+              </button>
+              <button
+                onClick={() => {
+                  // Reset view when switching to notification tab
+                  setFloatingDialogTab("notification");
+                  setShowTrackerMonitoringDialog(false);
+                  setSelectedTrackerDocument(null);
+                  setDocumentTracking(null);
+                }}
+                className={`px-4 py-2 rounded-lg font-medium transition-all text-sm ${
+                  floatingDialogTab === "notification"
+                    ? "bg-purple-600 text-white shadow-md"
+                    : "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50"
+                }`}
+              >
+                Notification
+              </button>
+            </div>
             <DialogTitle className="text-purple-900">
-              Document Tracker
+              {floatingDialogTab === "tracker" && "Document Tracker"}
+              {floatingDialogTab === "notification" && "Notifications"}
             </DialogTitle>
             <DialogDescription>
-              Track and manage your documents
+              {floatingDialogTab === "tracker" && "Track and manage your documents"}
+              {floatingDialogTab === "notification" && "View all your notifications"}
             </DialogDescription>
-          </DialogHeader>
+          </div>
 
           {/* Main Content */}
-          <div className="flex-1 flex flex-col gap-3 p-4 overflow-hidden">
+          {floatingDialogTab === "tracker" && (
+       <div className="flex-1 flex flex-col gap-3 p-4 overflow-hidden">
+             
             {/* Search Box */}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
               <Input
-                placeholder="Search by PO, PI, or Trace Code..."
+                value={trackerSearchInput}
+                onChange={(e) => setTrackerSearchInput(e.target.value)}
+                placeholder="Search by document number or supplier name..."
+                className="pl-10 bg-gray-50 border-gray-200 focus:bg-white"
+              />
+            </div>
+            
+            {/* Search Results or Empty State */}
+            {showTrackerMonitoringDialog && selectedTrackerDocument && documentTracking ? (
+              <div className="flex-1 flex flex-col overflow-hidden">
+                <div className="mb-4 flex justify-start">
+                  <button
+                    onClick={() => {
+                      setDocumentTracking(null);
+                    }}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    Back
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto">
+                  <DocumentTrackingDisplay tracking={documentTracking} />
+                </div>
+              </div>
+            ) : showTrackerMonitoringDialog ? (
+              <DocumentMonitoringDialog
+                open={showTrackerMonitoringDialog}
+                onOpenChange={(open: boolean) => {
+                  setShowTrackerMonitoringDialog(open);
+                  if (!open) {
+                    setSelectedTrackerDocument(null);
+                  }
+                }}
+                po={selectedTrackerDocument?.docType === 'PO' ? selectedTrackerDocument.data : mockPurchaseOrder[0]}
+                mockItems={[]}
+                isPOCreated={(poNumber) => true}
+                getEffectivePOStatus={(po) => "Completed"}
+                formatDateToDDMMYYYY={(date) => {
+                  if (!date) return "";
+                  const d = new Date(date);
+                  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+                }}
+                piNumber={selectedTrackerDocument?.docType === 'PI' ? selectedTrackerDocument.docNo : "PI-2025-001"}
+                linkedPI={selectedTrackerDocument?.docType === 'PI' ? selectedTrackerDocument.data : mockpurchaseInvoice[0]}
+                formatCurrency={(amount, currency) => `${currency} ${amount.toLocaleString()}`}
+                isDemoMode={true}
+              />
+            ) : trackerSearchInput.trim() ? (
+              <div className="flex-1 flex flex-col overflow-hidden">
+                <ScrollArea className="flex-1 border border-gray-200 rounded-lg bg-white">
+                  <div className="p-3 space-y-2 max-h-[600px] overflow-y-auto">
+                    {getTrackerSearchResults(trackerSearchInput).length > 0 ? (
+                      getTrackerSearchResults(trackerSearchInput).map((result) => (
+                        <div
+                          key={result.id}
+                          onClick={() => {
+                            // For tracker tab (demo mode), show DocumentMonitoringDialog
+                            // Not setting documentTracking here keeps it in demo mode
+                            setSelectedTrackerDocument(result);
+                            setShowTrackerMonitoringDialog(true);
+                          }}
+                          className="p-3 rounded-lg border border-gray-200 hover:border-purple-300 hover:bg-purple-50 transition-all cursor-pointer group"
+                        >
+                          <div className="flex items-start justify-between gap-2 mb-2">
+                            <div className="flex-1 min-w-0">
+                              <p className="font-semibold text-sm text-gray-900 truncate">{result.displayName}</p>
+                              <p className="text-xs text-gray-500 truncate">{result.supplier}</p>
+                              <p className="text-xs text-gray-400 mt-1">{result.date}</p>
+                            </div>
+                            <Badge className="bg-purple-100 text-purple-800 text-xs flex-shrink-0">{result.docType}</Badge>
+                            {result.amount && (
+                              <div className="text-right text-xs flex-shrink-0">
+                                <p className="font-semibold text-gray-900">{result.currency} {result.amount.toLocaleString()}</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="flex items-center justify-center h-32 text-gray-500">
+                        <p className="text-sm">No documents found matching "{trackerSearchInput}"</p>
+                      </div>
+                    )}
+                  </div>
+                </ScrollArea>
+              </div>
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center text-center">
+                <FileText className="w-16 h-16 text-purple-300 mx-auto mb-4" />
+                <p className="text-xl font-semibold text-slate-900 mb-2">Document Tracking</p>
+                <p className="text-gray-600 mb-6">Search for documents to track and view details</p>
+              </div>
+            )}
+          </div>
+          )}
+
+          {/* Notification Tab Content */}
+          {floatingDialogTab === "notification" && (
+          <div className="flex-1 flex flex-col gap-3 p-4 overflow-hidden">
+            {showTrackerMonitoringDialog && selectedTrackerDocument && documentTracking ? (
+              <div className="flex-1 overflow-y-auto">
+                <div className="mb-4 flex justify-start">
+                  <button
+                      onClick={() => {
+                        setDocumentTracking(null);
+                        setShowTrackerMonitoringDialog(false);
+                        setSelectedTrackerDocument(null);
+                      }}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    Back
+                  </button>
+                </div>
+                <DocumentTrackingDisplay tracking={documentTracking} />
+              </div>
+            ) : showTrackerMonitoringDialog && selectedTrackerDocument ? (
+              <DocumentMonitoringDialog
+                open={showTrackerMonitoringDialog}
+                onOpenChange={(open: boolean) => {
+                  setShowTrackerMonitoringDialog(open);
+                  if (!open) {
+                    setSelectedTrackerDocument(null);
+                  }
+                }}
+                po={selectedTrackerDocument?.docType === 'PO' ? selectedTrackerDocument.data : mockPurchaseOrder[0]}
+                mockItems={[]}
+                isPOCreated={(poNumber) => true}
+                getEffectivePOStatus={(po) => "Completed"}
+                formatDateToDDMMYYYY={(date) => {
+                  if (!date) return "";
+                  const d = new Date(date);
+                  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+                }}
+                piNumber={selectedTrackerDocument?.docType === 'PI' ? selectedTrackerDocument.docNo : mockpurchaseInvoice[0]?.purchaseInvoiceNo || "PI-2025-001"}
+                linkedPI={selectedTrackerDocument?.docType === 'PI' ? selectedTrackerDocument.data : mockpurchaseInvoice[0]}
+                formatCurrency={(amount, currency) => `${currency} ${amount.toLocaleString()}`}
+                isDemoMode={true}
+              />
+            ) : (
+              <>
+            {/* Search Box */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                placeholder="Search by document number or supplier name..."
                 className="pl-10 bg-gray-50 border-gray-200 focus:bg-white"
               />
             </div>
@@ -1865,9 +2413,17 @@ const getFilteredDocuments = () => {
                         
                         
                       </div>
-                      <div className="flex items-center gap-1 text-xs text-gray-600 group-hover:text-purple-600 transition-colors">
-                        <LinkIcon className="h-3 w-3" />
-                        <span>Trace Code: {doc.traceCode}</span>
+                      <div className="flex items-center justify-between gap-1 pt-2 border-t border-gray-100">
+                        <div className="flex items-center gap-1 text-xs text-gray-600 group-hover:text-purple-600 transition-colors">
+                          <LinkIcon className="h-3 w-3" />
+                          <span>Trace Code: {doc.traceCode}</span>
+                        </div>
+                        <button onClick={(e) => {
+                          e.stopPropagation();
+                        }} className="p-2 rounded hover:bg-gray-100 transition-colors text-gray-500 hover:text-purple-600 flex-shrink-0 cursor-not-allowed opacity-50 flex items-center gap-1">
+                          <MessageCircle className="h-6 w-6" />
+                          <span className="text-xs font-medium">Message</span>
+                        </button>
                       </div>
                     
                   </div>
@@ -1875,49 +2431,44 @@ const getFilteredDocuments = () => {
                 }
                 {getFilteredDocuments().length > 0 ? (
                   getFilteredDocuments().map((doc) => (
-                    <div key={doc.id} className="p-3 rounded-lg border border-gray-200 hover:border-purple-300 hover:bg-purple-50 transition-all cursor-pointer group" onClick={() => { 
-                      const warehouse = doc.traceCode;
-                      setSelectedDocForChat(doc); 
+                    <div key={doc.id} onClick={() => {
+                      // Detect document type
+                      const docType = detectDocumentType(doc);
                       
-                      // Get all documents from the same warehouse from filtered documents
-                      const warehouseDocuments = getFilteredDocuments().filter(d => d.traceCode === warehouse);
+                      // Find the full document data from mock arrays
+                      let fullDocData = doc.data || doc;
                       
-                      // Set all documents from this warehouse
-                      setDocumentsByWarehouse(prev => {
-                        return {
-                          ...prev,
-                          [warehouse]: warehouseDocuments
-                        };
-                      });
+                      if (docType === 'PO') {
+                        // Look up PO from mock data
+                        fullDocData = mockPurchaseOrder.find(
+                          po => po.purchaseOrderNo === (doc.poNo || doc.docNo) || po.poId === doc.poId || po.poId === doc.id
+                        ) || fullDocData;
+                      } else if (docType === 'PI') {
+                        // Look up PI from mock data
+                        fullDocData = mockpurchaseInvoice.find(
+                          pi => pi.purchaseInvoiceNo === (doc.piNo || doc.docNo) || pi.piId === doc.id
+                        ) || fullDocData;
+                      } else if (docType === 'IC') {
+                        // Look up Import Cost from mock data
+                        fullDocData = mockImportCosts.find(
+                          ic => ic.icNum === (doc.docNo) || ic.icId === doc.id
+                        ) || fullDocData;
+                      } else if (docType === 'PR') {
+                        // Look up Purchase Return from mock data
+                        fullDocData = mockpurchaseReturns.find(
+                          pr => pr.prNo === (doc.docNo) || pr.returId === doc.id
+                        ) || fullDocData;
+                      } else if (docType === 'SR') {
+                        // Look up Shipment Request from mock data
+                        fullDocData = mockShipmentRequest.find(
+                          sr => sr.srNum === (doc.docNo) || sr.srId === doc.id
+                        ) || fullDocData;
+                      }
                       
-                      // Set selected warehouse
-                      setSelectedWarehouse(warehouse);
-                      
-                      // Initialize chat messages for this warehouse if not exists
-                      setChatMessagesByWarehouse(prev => {
-                        if (!prev[warehouse]) {
-                          const responseTime = new Date().toLocaleTimeString(
-                            "en-US",
-                            {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                              hour12: true,
-                            }
-                          );
-                          const optionsMessage = {
-                            id: `logistic-${Date.now()}`,
-                            text: "options",
-                            timestamp: responseTime,
-                            isOptions: true
-                          };
-                          return { ...prev, [warehouse]: [optionsMessage] };
-                        }
-                        return prev;
-                      });
-                      
-                      // Open dialog
-                      setShowChatDialog(true);
-                    }}>
+                      setSelectedTrackerDocument({ ...doc, docType, data: fullDocData });
+                      setDocumentTracking(null);
+                      setShowTrackerMonitoringDialog(true);
+                    }} className="p-3 rounded-lg border border-gray-200 hover:border-purple-300 hover:bg-purple-50 transition-all group cursor-pointer">
                       <div className="flex items-start justify-between gap-2 mb-2">
                               <div className="flex-1">
                                   <p className="font-semibold text-sm text-gray-900">
@@ -1956,9 +2507,50 @@ const getFilteredDocuments = () => {
                         
                         
                       </div>
-                      <div className="flex items-center gap-1 text-xs text-gray-600 group-hover:text-purple-600 transition-colors">
-                        <LinkIcon className="h-3 w-3" />
-                        <span>Trace Code: {doc.traceCode}</span>
+                      <div className="flex items-center justify-between gap-1 pt-2 border-t border-gray-100">
+                        <div className="flex items-center gap-1 text-xs text-gray-600 group-hover:text-purple-600 transition-colors">
+                          <LinkIcon className="h-3 w-3" />
+                          <span>Trace Code: {doc.traceCode}</span>
+                        </div>
+                        <button onClick={(e) => {
+                          e.stopPropagation();
+                          const warehouse = doc.traceCode;
+                          setSelectedDocForChat(doc);
+                          
+                          const warehouseDocuments = getFilteredDocuments().filter(d => d.traceCode === warehouse);
+                          setDocumentsByWarehouse(prev => ({
+                            ...prev,
+                            [warehouse]: warehouseDocuments
+                          }));
+                          
+                          setSelectedWarehouse(warehouse);
+                          
+                          setChatMessagesByWarehouse(prev => {
+                            if (!prev[warehouse]) {
+                              const responseTime = new Date().toLocaleTimeString(
+                                "en-US",
+                                {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                  hour12: true,
+                                }
+                              );
+                              const optionsMessage = {
+                                id: `logistic-${Date.now()}`,
+                                text: "options",
+                                timestamp: responseTime,
+                                isOptions: true
+                              };
+                              return { ...prev, [warehouse]: [optionsMessage] };
+                            }
+                            return prev;
+                          });
+                          
+                          setShowChatDialog(true);
+                        }} className="p-2 rounded hover:bg-gray-100 transition-colors text-gray-500 hover:text-purple-600 flex-shrink-0 flex items-center gap-1">
+                          <MessageCircle className="h-6 w-6" />
+                          <span className="text-xs font-medium">Message</span>
+                        </button>
                       </div>
                     </div>
                   ))
@@ -1969,7 +2561,10 @@ const getFilteredDocuments = () => {
                 ) : null}
               </div>
             </ScrollArea>
+              </>
+            )}
           </div>
+          )}
         </DialogContent>
       </Dialog>
 

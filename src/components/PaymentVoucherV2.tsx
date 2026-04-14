@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+﻿import React, { useState, useEffect } from "react";
 import { motion } from "motion/react";
 import {
   formatDateToDDMMYYYY,
@@ -11,7 +11,7 @@ import { formatNumber, parseFormattedNumber } from "../utils/numberFormat";
 import {
   mockLinkedPOs,
   mockpurchaseInvoice,
-  mockPVR,
+  mockPV2,
   mockSuppliers,
   mockDivisionPICs,
   mockExpenseNote,
@@ -29,8 +29,8 @@ import {
   TableCell,
   TableHead,
   TableHeader,
-  TableRow, 
-} from "./ui/table";  
+  TableRow,
+} from "./ui/table";
 import {
   Dialog,
   DialogContent,
@@ -112,10 +112,10 @@ type PTType =
   | "WSI"
   | "IMI";
 
-interface PVRData {
+interface PVData {
   id: string;
-  pvrNo: string;
-  pvrDate: string;
+  pvNo: string;
+  pvDate: string;
   docReceiptDate: string;
   term: TermType;
   supplierName: string;
@@ -131,20 +131,21 @@ interface PVRData {
   bankAccount?: string;
   method?: string;
   reference?: string;
-  items?: PVRItem[];
+  items?: PVItem[];
   linkedDocs?: LinkedPIDocument[];
   linkedPIs?: LinkedPIDocument[];
   linkedDocumentType?:
-    | "PURCHASE_INVOICE"
-    | "IMPORT_COST"
-    | "SHIPMENT_REQUEST"
-    | "PURCHASE_RETURN";
+  | "PURCHASE_INVOICE"
+  | "IMPORT_COST"
+  | "SHIPMENT_REQUEST"
+  | "PURCHASE_RETURN";
   isSubmitted?: boolean;
   isApproved?: boolean;
   status?: "voided" | "active";
+  linkedFromReimburseNo?: string;
 }
 
-interface PVRItem {
+interface PVItem {
   id: string;
   description: string;
   qty: number;
@@ -179,13 +180,14 @@ interface SupplierData {
   availablePIs: LinkedPIDocument[];
 }
 
-interface PVRProps {
+interface PVProps {
   onNavigateToPurchaseInvoice?: (documentNo: string) => void;
   onNavigateToPurchaseOrder?: (documentNo: string) => void;
   onNavigateToImportCost?: (documentNo: string) => void;
   onNavigateToShipmentRequest?: (documentNo: string) => void;
   onNavigateToAPNote?: (apNoteNo: string) => void;
   onNavigateToPV?: (pvNo: string) => void;
+  onNavigateToReimburse?: (reimburseNo: string) => void;
 }
 
 // Mock data for suppliers - using mockSuppliers from mockData
@@ -229,32 +231,32 @@ const convertToISODate = (dateString: string): string => {
   return `${year}-${month}-${day}`;
 };
 
-// Initial mock data for PVR
-const initialMockData: PVRData[] = mockPVR.map(
-  (pvr, index) => ({
-    id: pvr.id || `pvr-${index + 1}`,
-    pvrNo: pvr.pvrNo,
-    pvrDate: pvr.pvrDate,
-    docReceiptDate: pvr.docReceiptDate,
-    term: (pvr.term && (pvr.term === "CREDIT" ||
-    pvr.term === "URGENT" ||
-    pvr.term === "COD" ||
-    pvr.term === "LAINNYA")
-      ? pvr.term.charAt(0) + pvr.term.slice(1).toLowerCase()
+// Initial mock data for PV
+const initialMockData: PVData[] = mockPV2.map(
+  (pv, index) => ({
+    id: pv.id || `pv-${index + 1}`,
+    pvNo: pv.pvrNo,
+    pvDate: pv.pvrDate,
+    docReceiptDate: pv.docReceiptDate,
+    term: (pv.term && (pv.term === "CREDIT" ||
+      pv.term === "URGENT" ||
+      pv.term === "COD" ||
+      pv.term === "LAINNYA")
+      ? pv.term.charAt(0) + pv.term.slice(1).toLowerCase()
       : "CREDIT") as TermType,
-    supplierName: pvr.supplierName,
-    supplierCategory: (pvr.supplierCategory === "OVERSEAS" ||
-    pvr.supplierCategory === "LOCAL"
-      ? pvr.supplierCategory
+    supplierName: pv.supplierName,
+    supplierCategory: (pv.supplierCategory === "OVERSEAS" ||
+      pv.supplierCategory === "LOCAL"
+      ? pv.supplierCategory
       : "LOCAL") as SupplierCategory,
-    currency: pvr.currency,
-    paymentMethod: pvr.paymentMethod as PaymentMethod,
-    remarks: pvr.remarks,
-    poNumber: pvr.poNumber,
+    currency: pv.currency,
+    paymentMethod: pv.paymentMethod as PaymentMethod,
+    remarks: pv.remarks,
+    poNumber: pv.poNumber,
     totalInvoice: (() => {
       // Calculate total from linkedDocs if available, excluding PO
-      if (pvr.linkedDocs && pvr.linkedDocs.length > 0) {
-        return pvr.linkedDocs.reduce((sum, doc) => {
+      if (pv.linkedDocs && pv.linkedDocs.length > 0) {
+        return pv.linkedDocs.reduce((sum, doc) => {
           // Only include PI, IC, SR, EN - exclude PO
           if (doc.documentType && doc.documentType !== "PO") {
             return sum + (doc.totalAmount || 0);
@@ -264,12 +266,12 @@ const initialMockData: PVRData[] = mockPVR.map(
       }
       return 0;
     })(),
-    createdBy: pvr.createdBy,
-    pt: pvr.pt as PTType,
+    createdBy: pv.createdBy,
+    pt: pv.pt as PTType,
     isSubmitted: false,
     isApproved: false,
     status: "active",
-    linkedDocs: (pvr.linkedDocs as LinkedPIDocument[]) || [],
+    linkedDocs: (pv.linkedDocs as LinkedPIDocument[]) || [],
   }),
 );
 
@@ -303,16 +305,24 @@ const departmentOptions = [
   },
 ];
 
-export default function PVR({
+export default function PV({
   onNavigateToPurchaseInvoice,
   onNavigateToPurchaseOrder,
   onNavigateToImportCost,
   onNavigateToShipmentRequest,
   onNavigateToAPNote,
   onNavigateToPV,
-}: PVRProps) {
+  onNavigateToReimburse,
+}: PVProps) {
   // Helper function to get document type label from code
-  const getDocumentTypeLabel = (docType: string): string => {
+  const getDocumentTypeLabel = (docOrType: string | any): string => {
+    // If documentTypeLabel exists, use it first
+    if (typeof docOrType === "object" && docOrType?.documentTypeLabel) {
+      return docOrType.documentTypeLabel;
+    }
+    
+    // Otherwise map the document type
+    const docType = typeof docOrType === "object" ? docOrType?.documentType : docOrType;
     const typeMap: Record<string, string> = {
       PI: "Purchase Invoice",
       PO: "Purchase Order",
@@ -392,83 +402,83 @@ export default function PVR({
     return dateStr;
   };
 
-  // Initialize PVR data from localStorage or use mock data
-  const initializePVRData = (): PVRData[] => {
+  // Initialize PV data from localStorage or use mock data
+  const initializePVData = (): PVData[] => {
     try {
-      const savedPVRs = JSON.parse(localStorage.getItem("pvrData") || "[]");
-      
-      // Always merge saved PVRs with initialMockData to ensure mock data is always available
-      // but don't duplicate if a PVR already exists
-      const existingPVRNumbers = new Set(savedPVRs.map((pvr: any) => pvr.pvrNo));
+      const savedPVs = JSON.parse(localStorage.getItem("pvData") || "[]");
+
+      // Always merge saved PVs with initialMockData to ensure mock data is always available
+      // but don't duplicate if a PV already exists
+      const existingPVNumbers = new Set(savedPVs.map((pv: any) => pv.pvNo));
       const mockDataToAdd = initialMockData.filter(
-        (mockPVR) => !existingPVRNumbers.has(mockPVR.pvrNo)
+        (mockPV2) => !existingPVNumbers.has(mockPV2.pvNo)
       );
-      
-      const mergedPVRs = [...initialMockData, ...savedPVRs.filter((pvr: any) => 
-        !initialMockData.some((mock: any) => mock.pvrNo === pvr.pvrNo)
+
+      const mergedPVs = [...initialMockData, ...savedPVs.filter((pv: any) =>
+        !initialMockData.some((mock: any) => mock.pvNo === pv.pvNo)
       )];
-      
-      console.log("[PVR] Initialized with merged data:");
-      console.log(`  - Mock PVRs: ${initialMockData.length}`);
-      console.log(`  - Saved PVRs: ${savedPVRs.length}`);
-      console.log(`  - Total: ${mergedPVRs.length}`);
-      
-      return mergedPVRs;
+
+      console.log("[PV] Initialized with merged data:");
+      console.log(`  - Mock PVs: ${initialMockData.length}`);
+      console.log(`  - Saved PVs: ${savedPVs.length}`);
+      console.log(`  - Total: ${mergedPVs.length}`);
+
+      return mergedPVs;
     } catch (error) {
-      console.error("Failed to load PVR data from localStorage:", error);
+      console.error("Failed to load PV data from localStorage:", error);
       return initialMockData;
     }
   };
 
-  const [pvrData, setPvrData] =
-    useState<PVRData[]>(initializePVRData());
-  
+  const [pvData, setPvData] =
+    useState<PVData[]>(initializePVData());
+
   // Initialize localStorage with merged mock + saved data on first load
   useEffect(() => {
     try {
-      const currentPVRData = JSON.parse(localStorage.getItem("pvrData") || "[]");
+      const currentPVData = JSON.parse(localStorage.getItem("pvData") || "[]");
       const mergedData = [...initialMockData];
-      
-      // Add any saved PVRs that aren't in mock data
-      currentPVRData.forEach((savedPVR: any) => {
-        if (!initialMockData.some(mock => mock.pvrNo === savedPVR.pvrNo)) {
-          mergedData.push(savedPVR);
+
+      // Add any saved PVs that aren't in mock data
+      currentPVData.forEach((savedPV: any) => {
+        if (!initialMockData.some(mock => mock.pvNo === savedPV.pvNo)) {
+          mergedData.push(savedPV);
         }
       });
-      
+
       // Save merged data back to localStorage
-      if (JSON.stringify(currentPVRData) !== JSON.stringify(mergedData)) {
-        console.log("[PVR] Initializing localStorage with merged mock + saved PVRs...");
-        localStorage.setItem("pvrData", JSON.stringify(mergedData));
+      if (JSON.stringify(currentPVData) !== JSON.stringify(mergedData)) {
+        console.log("[PV] Initializing localStorage with merged mock + saved PVs...");
+        localStorage.setItem("pvData", JSON.stringify(mergedData));
       }
     } catch (error) {
       console.error("Failed to initialize localStorage with merged data:", error);
     }
   }, []); // Only run once on mount
-  
-  // Persist PVR data to localStorage whenever it changes
+
+  // Persist PV data to localStorage whenever it changes
   useEffect(() => {
     try {
-      localStorage.setItem("pvrData", JSON.stringify(pvrData));
+      localStorage.setItem("pvData", JSON.stringify(pvData));
     } catch (error) {
-      console.error("Failed to save PVR data to localStorage:", error);
+      console.error("Failed to save PV data to localStorage:", error);
     }
-  }, [pvrData]);
+  }, [pvData]);
 
-  // Listen for storage changes from other components (e.g., PVR created from POCollapsible)
+  // Listen for storage changes from other components (e.g., PV created from POCollapsible)
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === "pvrData" || e.key === null) {
+      if (e.key === "pvData" || e.key === null) {
         try {
-          // Reload PVR data from localStorage to get the latest updates
-          const savedPVRs = localStorage.getItem("pvrData");
-          if (savedPVRs) {
-            const updatedPVRs = JSON.parse(savedPVRs);
-            setPvrData(updatedPVRs);
-            console.log("[PVR] Storage updated with PVRs from localStorage:", updatedPVRs);
+          // Reload PV data from localStorage to get the latest updates
+          const savedPVs = localStorage.getItem("pvData");
+          if (savedPVs) {
+            const updatedPVs = JSON.parse(savedPVs);
+            setPvData(updatedPVs);
+            console.log("[PV] Storage updated with PVs from localStorage:", updatedPVs);
           }
         } catch (error) {
-          console.error("Failed to reload PVR data from localStorage:", error);
+          console.error("Failed to reload PV data from localStorage:", error);
         }
       }
     };
@@ -478,6 +488,64 @@ export default function PVR({
       window.removeEventListener("storage", handleStorageChange);
     };
   }, []);
+
+  // Listen for custom event from ReimburseWithoutPO when new PV is created
+  useEffect(() => {
+    const handlePVDataUpdated = (event: any) => {
+      try {
+        const { updatedPVs } = event.detail;
+        setPvData(updatedPVs);
+        console.log("[PV] PV data updated from ReimburseWithoutPO event:", updatedPVs);
+      } catch (error) {
+        console.error("Failed to handle pvDataUpdated event:", error);
+      }
+    };
+
+    window.addEventListener("pvDataUpdated", handlePVDataUpdated);
+    return () => {
+      window.removeEventListener("pvDataUpdated", handlePVDataUpdated);
+    };
+  }, []);
+
+  // Listen for navigation events from ReimburseWithoutPO to auto-expand PVs
+  useEffect(() => {
+    const handleNavigateToPaymentVoucher = (event: any) => {
+      const { pvNo, pvId, pvData: newPvData } = event.detail;
+      console.log("[PV] Navigation event received:", { pvNo, pvId, newPvData });
+      
+      // If PV data is provided, save it and update state
+      if (newPvData) {
+        const existingPVs = JSON.parse(localStorage.getItem("pvData") || "[]");
+        const updatedPVs = [newPvData, ...existingPVs];
+        localStorage.setItem("pvData", JSON.stringify(updatedPVs));
+        setPvData(updatedPVs);
+        console.log("[PV] Saved new PV to localStorage and updated state:", newPvData.pvNo);
+      }
+      
+      // Expand the PV by adding it to expandedItems
+      const targetPV = (newPvData ? [newPvData, ...pvData] : pvData).find(pv => pv.pvNo === pvNo || pv.id === pvId);
+      if (targetPV) {
+        console.log("[PV] Found target PV to expand:", targetPV.pvNo);
+        setExpandedItems(prev => new Set([...prev, targetPV.id]));
+        
+        // Scroll to the PV card
+        setTimeout(() => {
+          const element = document.getElementById(`pv-card-${targetPV.pvNo}`);
+          if (element) {
+            console.log("[PV] Scrolled to PV card");
+            element.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+        }, 300);
+      } else {
+        console.log("[PV] Target PV not found:", { pvNo, pvId });
+      }
+    };
+
+    window.addEventListener("navigateToPaymentVoucher", handleNavigateToPaymentVoucher);
+    return () => {
+      window.removeEventListener("navigateToPaymentVoucher", handleNavigateToPaymentVoucher);
+    };
+  }, [pvData]);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [ptFilter, setPtFilter] = useState<string>("ALL PT");
@@ -492,17 +560,18 @@ export default function PVR({
   >(new Set());
   const [expandAll, setExpandAll] = useState(false);
   const [selectedDetail, setSelectedDetail] =
-    useState<PVRData | null>(null);
+    useState<PVData | null>(null);
   const [showDetailDialog, setShowDetailDialog] =
     useState(false);
   const [showCreateDialog, setShowCreateDialog] =
     useState(false);
   const [showCreatePVDialog, setShowCreatePVDialog] = useState(false);
-    const [showPVExistsDialog, setShowPVExistsDialog] = useState(false);
-  const [existingPvrNo, setExistingPvrNo] = useState("");
+  const [showPVExistsDialog, setShowPVExistsDialog] = useState(false);
+  const [showSubmitWarningDialog, setShowSubmitWarningDialog] = useState(false);
+  const [existingPvNo, setExistingPvNo] = useState("");
   const [showVoidDialog, setShowVoidDialog] = useState(false);
   const [selectedForVoid, setSelectedForVoid] =
-    useState<PVRData | null>(null);
+    useState<PVData | null>(null);
   const [voidReason, setVoidReason] = useState("");
   const [voidDate, setVoidDate] = useState(
     convertToDisplayDate(getTodayYYYYMMDD()),
@@ -512,20 +581,20 @@ export default function PVR({
   const [showLinkedDocsDialog, setShowLinkedDocsDialog] =
     useState(false);
   const [selectedForLinkedDocs, setSelectedForLinkedDocs] =
-    useState<PVRData | null>(null);
+    useState<PVData | null>(null);
   const [availablePIsForSupplier, setAvailablePIsForSupplier] =
     useState<LinkedPIDocument[]>([]);
   const [linkedPIs, setLinkedPIs] = useState<
     LinkedPIDocument[]
   >([]);
-  const [pvrItems, setPvrItems] = useState<PVRItem[]>([]);
+  const [pvItems, setPvItems] = useState<PVItem[]>([]);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editFormData, setEditFormData] =
-    useState<PVRData | null>(null);
+    useState<PVData | null>(null);
   const [editLinkedPIs, setEditLinkedPIs] = useState<
     LinkedPIDocument[]
   >([]);
-  const [editPvrItems, setEditPvrItems] = useState<PVRItem[]>(
+  const [editPvItems, setEditPvItems] = useState<PVItem[]>(
     [],
   );
   const [showAddDocumentDialog, setShowAddDocumentDialog] =
@@ -541,14 +610,14 @@ export default function PVR({
     useState("");
   const [showSubmitDialog, setShowSubmitDialog] =
     useState(false);
-  const [selectedPVRsForSubmit, setSelectedPVRsForSubmit] =
+  const [selectedPVsForSubmit, setSelectedPVsForSubmit] =
     useState<string[]>([]);
   const [submitDocType, setSubmitDocType] =
     useState<TermType>("URGENT");
   const [submitDate, setSubmitDate] = useState("");
   const [submitTo, setSubmitTo] = useState("AP");
   const [picName, setPicName] = useState("");
-  
+
   // Calendar Filter Dialog States
   const [showCalendarDialog, setShowCalendarDialog] =
     useState(false);
@@ -557,20 +626,19 @@ export default function PVR({
   const [calendarUseTodayDate, setCalendarUseTodayDate] =
     useState(false);
   const [calendarFilterType, setCalendarFilterType] = useState<
-    "pvrDate" | "docReceiptDate"
-  >("pvrDate");
+    "pvDate" | "docReceiptDate"
+  >("pvDate");
 
   const [showApproveDialog, setShowApproveDialog] =
     useState(false);
   const [selectedForApprove, setSelectedForApprove] =
-    useState<PVRData | null>(null);
+    useState<PVData | null>(null);
   const [showSuccessDialog, setShowSuccessDialog] =
     useState(false);
   const [showPVSuccessDialog, setShowPVSuccessDialog] =
-    useState(false);  
-  const [savedPVNo, setSavedPVNo] = useState("");
+    useState(false);
   const [savedPVLinkedDocs, setSavedPVLinkedDocs] = useState<any[]>([]);
-  const [savedPvrNo, setSavedPvrNo] = useState("");
+  const [savedPvNo, setSavedPvNo] = useState("");
   const [savedLinkedDocs, setSavedLinkedDocs] = useState<
     LinkedPIDocument[]
   >([]);
@@ -653,13 +721,13 @@ export default function PVR({
   const [editingDiscountValue, setEditingDiscountValue] =
     useState<string>("");
 
-  // Helper function to generate PVR number format: PVR/XXX.MDN/YYZZ/00AA
-  const generatePVRNumber = (
+  // Helper function to generate PV number format: PV/XXX.MDN/YYZZ/00AA
+  const generatePVNumber = (
     pt: PTType,
-    pvrDate: string,
+    pvDate: string,
   ): string => {
     // Extract year (last 2 digits) and month from DD/MM/YYYY format
-    const dateParts = pvrDate.split("/");
+    const dateParts = pvDate.split("/");
     const day = dateParts[0];
     const month = dateParts[1];
     const year = dateParts[2];
@@ -674,15 +742,15 @@ export default function PVR({
       "0",
     );
 
-    return `PVR/${pt}.MDN/${yy}${zz}/00${aa}`;
+    return `PV/${pt}.MDN/${yy}${zz}/00${aa}`;
   };
 
-  const [pvrForm, setPvrForm] = useState({
-    pvrNo: generatePVRNumber(
+  const [pvForm, setPvForm] = useState({
+    pvNo: generatePVNumber(
       "WNS",
       convertToDisplayDate(getTodayYYYYMMDD()),
     ),
-    pvrDate: convertToDisplayDate(getTodayYYYYMMDD()),
+    pvDate: convertToDisplayDate(getTodayYYYYMMDD()),
     docReceiptDate: convertToDisplayDate(getTodayYYYYMMDD()),
     term: "CREDIT" as TermType,
     supplierName: "",
@@ -691,7 +759,7 @@ export default function PVR({
     remarks: "",
     pt: "WNS" as PTType,
     rate: 0,
-    bankAccount: "",
+    bankAccount: "KAS SEMENTARA",
     reference: "",
   });
 
@@ -708,7 +776,7 @@ export default function PVR({
   // Load/Clear edit form state when a new document is opened for editing
   useEffect(() => {
     if (showEditDocumentDialog && editingDocument) {
-      const docStorageKey = `pvr_edit_doc_${editingDocument.id}`;
+      const docStorageKey = `pv_edit_doc_${editingDocument.id}`;
       const savedData = localStorage.getItem(docStorageKey);
 
       if (savedData) {
@@ -768,19 +836,19 @@ export default function PVR({
   // Load discount value and details from localStorage when discount dialog opens
   useEffect(() => {
     if (editingDiscountId) {
-      const docStorageKey = `pvr_edit_doc_${editingDiscountId}`;
+      const docStorageKey = `pv_edit_doc_${editingDiscountId}`;
       const savedData = localStorage.getItem(docStorageKey);
       if (savedData) {
         try {
           const parsedData = JSON.parse(savedData);
           const savedDiscount = parsedData.discount || "";
           setEditingDiscountValue(savedDiscount);
-          
+
           // Also load the discount details (noteValue and noteDetailsPerDoc)
           // If noteValue is not saved, use the savedDiscount as the main discount amount
           const mainDiscountValue = parsedData.noteValue || parsedData.discount || "";
           setNoteValue(mainDiscountValue);
-          
+
           if (parsedData.noteDetailsPerDoc && parsedData.noteDetailsPerDoc.length > 0) {
             setNoteDetailsPerDoc((prevState) => ({
               ...prevState,
@@ -814,59 +882,59 @@ export default function PVR({
     }
   }, [editingDiscountId]);
 
-  // Listen for navigateToPVR event to auto-expand card
+  // Listen for navigateToPV event to auto-expand card
   useEffect(() => {
-    const handleNavigateToPVR = (event: any) => {
-      const { pvrNo } = event.detail;
+    const handleNavigateToPV = (event: any) => {
+      const { pvNo } = event.detail;
       console.log(
-        "🎯 PVR received navigateToPVR event for:",
-        pvrNo,
+        "ðŸŽ¯ PV received navigateToPV event for:",
+        pvNo,
       );
 
-      // Find the PVR card by pvrNo and expand it
-      const pvrToExpand = pvrData.find(
-        (pvr) => pvr.pvrNo === pvrNo,
+      // Find the PV card by pvNo and expand it
+      const pvToExpand = pvData.find(
+        (pv) => pv.pvNo === pvNo,
       );
-      if (pvrToExpand) {
+      if (pvToExpand) {
         // Expand the card
-        setExpandedItems(new Set([pvrToExpand.id]));
+        setExpandedItems(new Set([pvToExpand.id]));
         console.log(
-          "✅ Expanding PVR card with id:",
-          pvrToExpand.id,
+          "âœ… Expanding PV card with id:",
+          pvToExpand.id,
         );
       }
     };
 
     window.addEventListener(
-      "navigateToPVR",
-      handleNavigateToPVR,
+      "navigateToPV",
+      handleNavigateToPV,
     );
     return () => {
       window.removeEventListener(
-        "navigateToPVR",
-        handleNavigateToPVR,
+        "navigateToPV",
+        handleNavigateToPV,
       );
     };
-  }, [pvrData]);
+  }, [pvData]);
 
-  const handleViewDetail = (pvr: PVRData) => {
-    setSelectedDetail(pvr);
+  const handleViewDetail = (pv: PVData) => {
+    setSelectedDetail(pv);
     setShowDetailDialog(true);
   };
 
-  const handleVoidClick = (pvr: PVRData) => {
-    setSelectedForVoid(pvr);
+  const handleVoidClick = (pv: PVData) => {
+    setSelectedForVoid(pv);
     setShowVoidDialog(true);
   };
 
   const handleVoid = () => {
     if (selectedForVoid) {
-      // Update the PVR status to voided
-      setPvrData((prevData) =>
-        prevData.map((pvr) =>
-          pvr.id === selectedForVoid.id
-            ? { ...pvr, status: "voided" }
-            : pvr,
+      // Update the PV status to voided
+      setPvData((prevData) =>
+        prevData.map((pv) =>
+          pv.id === selectedForVoid.id
+            ? { ...pv, status: "voided" }
+            : pv,
         ),
       );
       setShowVoidDialog(false);
@@ -876,27 +944,24 @@ export default function PVR({
     }
   };
 
-  const handleApproveClick = (pvr: PVRData) => {
-    setSelectedForApprove(pvr);
+  const handleApproveClick = (pv: PVData) => {
+    setSelectedForApprove(pv);
     setShowApproveDialog(true);
   };
 
   const handleApprove = () => {
-    if (selectedForApprove) {
-      setPvrData((prevData) =>
-        prevData.map((pvr) =>
-          pvr.id === selectedForApprove.id
-            ? { ...pvr, isApproved: true }
-            : pvr,
-        ),
-      );
+    const pv = pvData.find(p => p.id === selectedForApprove.id);
+    if (pv?.isApproved) {
+      setShowPVExistsDialog(true);
       setShowApproveDialog(false);
-      setSelectedForApprove(null);
+      return;
     }
+    setPvData(prev => prev.map(pv => pv.id === selectedForApprove.id ? { ...pv, isApproved: true } : pv));
+    setShowApproveDialog(false);
   };
 
   const handleSupplierChange = (supplierName: string) => {
-    setPvrForm({ ...pvrForm, supplierName });
+    setPvForm({ ...pvForm, supplierName });
 
     // Load available PIs for this supplier
     const supplier = supplierMasterData.find(
@@ -907,7 +972,7 @@ export default function PVR({
       // Auto set currency based on supplier category
       const defaultCurrency =
         supplier.category === "OVERSEAS" ? "USD" : "IDR";
-      setPvrForm((prev) => ({
+      setPvForm((prev) => ({
         ...prev,
         currency: defaultCurrency,
       }));
@@ -934,10 +999,10 @@ export default function PVR({
     ]);
   };
 
-  const handleCreatePVR = () => {
+  const handleCreatePV = () => {
     // Get supplier info
     const supplier = supplierMasterData.find(
-      (s) => s.name === pvrForm.supplierName,
+      (s) => s.name === pvForm.supplierName,
     );
     const supplierCategory: SupplierCategory =
       supplier?.category || "LOCAL";
@@ -945,7 +1010,7 @@ export default function PVR({
     // Build linkedDocs with all selected documents (PI, PO, EN, IC, SR)
     let allLinkedDocs: LinkedPIDocument[] = [];
     const processedPOs = new Set<string>();
-    
+
     if (linkedPIs.length > 0) {
       // Add all selected documents first
       linkedPIs.forEach((doc) => {
@@ -954,7 +1019,7 @@ export default function PVR({
           processedPOs.add(doc.poNo);
         }
       });
-      
+
       // Then find and add related POs for main documents that don't already have a PO selected
       linkedPIs.forEach((pi) => {
         if ((pi.documentType === "PI" || pi.documentType === "IC" || pi.documentType === "SR") && pi.poNo && !processedPOs.has(pi.poNo)) {
@@ -995,11 +1060,11 @@ export default function PVR({
         (sum, pi) => sum + pi.totalAmount,
         0,
       );
-      
+
       // Calculate total discount from localStorage
       let totalDiscount = 0;
       filteredDocs.forEach((doc) => {
-        const docStorageKey = `pvr_create_doc_${doc.id}`;
+        const docStorageKey = `pv_create_doc_${doc.id}`;
         const savedData = localStorage.getItem(docStorageKey);
         if (savedData) {
           try {
@@ -1007,10 +1072,10 @@ export default function PVR({
             if (parsed.discount) {
               totalDiscount += parseFormattedNumber(parsed.discount);
             }
-          } catch {}
+          } catch { }
         }
       });
-      
+
       totalInvoice = totalAmount - totalDiscount;
     }
 
@@ -1018,30 +1083,30 @@ export default function PVR({
     const poNumber =
       linkedPIs.length > 0 ? linkedPIs[0].poNo : "";
 
-    const newPVR: PVRData = {
+    const newPV: PVData = {
       id: Date.now().toString(),
-      pvrNo: pvrForm.pvrNo,
-      pvrDate: convertToStorageDate(pvrForm.pvrDate),
+      pvNo: pvForm.pvNo,
+      pvDate: convertToStorageDate(pvForm.pvDate),
       docReceiptDate: convertToStorageDate(
-        pvrForm.docReceiptDate,
+        pvForm.docReceiptDate,
       ),
-      term: pvrForm.term,
-      supplierName: pvrForm.supplierName,
+      term: pvForm.term,
+      supplierName: pvForm.supplierName,
       supplierCategory: supplierCategory,
-      currency: pvrForm.currency,
-      paymentMethod: pvrForm.paymentMethod,
-      remarks: pvrForm.remarks,
+      currency: pvForm.currency,
+      paymentMethod: pvForm.paymentMethod,
+      remarks: pvForm.remarks,
       poNumber: poNumber,
       totalInvoice: totalInvoice,
       createdBy: "SHEFANNY",
-      pt: pvrForm.pt,
+      pt: pvForm.pt,
       linkedDocs: allLinkedDocs,
     };
 
-    setPvrData([newPVR, ...pvrData]);
+    setPvData([newPV, ...pvData]);
 
     // Show success dialog
-    setSavedPvrNo(newPVR.pvrNo);
+    setSavedPvNo(newPV.pvNo);
     setSavedLinkedDocs(allLinkedDocs);
     setShowSuccessDialog(true);
 
@@ -1051,9 +1116,9 @@ export default function PVR({
 
   const resetForm = () => {
     const todayDate = convertToDisplayDate(getTodayYYYYMMDD());
-    setPvrForm({
-      pvrNo: generatePVRNumber("WNS", todayDate),
-      pvrDate: todayDate,
+    setPvForm({
+      pvNo: generatePVNumber("WNS", todayDate),
+      pvDate: todayDate,
       docReceiptDate: todayDate,
       term: "CREDIT",
       supplierName: "",
@@ -1062,23 +1127,23 @@ export default function PVR({
       remarks: "",
       pt: "WNS",
       rate: 0,
-      bankAccount: "",
+      bankAccount: "KAS SEMENTARA",
       reference: "",
     });
-    setPvrItems([]);
+    setPvItems([]);
     setLinkedPIs([]);
     setAvailablePIsForSupplier([]);
   };
 
-  const addPvrItem = () => {
-    const newItem: PVRItem = {
+  const addPvItem = () => {
+    const newItem: PVItem = {
       id: Date.now().toString(),
       description: "",
       qty: 0,
       unitPrice: 0,
       totalAmount: 0,
     };
-    setPvrItems([...pvrItems, newItem]);
+    setPvItems([...pvItems, newItem]);
   };
 
   const handleEdit = () => {
@@ -1086,14 +1151,14 @@ export default function PVR({
 
     const editData = {
       ...selectedDetail,
-      pvrDate: convertToDisplayDate(selectedDetail.pvrDate),
+      pvDate: convertToDisplayDate(selectedDetail.pvDate),
       docReceiptDate: convertToDisplayDate(
         selectedDetail.docReceiptDate,
       ),
     };
     setEditFormData(editData);
     setEditLinkedPIs(selectedDetail.linkedDocs || []);
-    setEditPvrItems(selectedDetail.items || []);
+    setEditPvItems(selectedDetail.items || []);
 
     // Load available PIs for the supplier
     const supplier = supplierMasterData.find(
@@ -1123,10 +1188,10 @@ export default function PVR({
       setEditFormData((prev) =>
         prev
           ? {
-              ...prev,
-              currency: defaultCurrency,
-              supplierCategory: supplier.category,
-            }
+            ...prev,
+            currency: defaultCurrency,
+            supplierCategory: supplier.category,
+          }
           : null,
       );
     } else {
@@ -1146,15 +1211,15 @@ export default function PVR({
     ]);
   };
 
-  const addEditPvrItem = () => {
-    const newItem: PVRItem = {
+  const addEditPVItem = () => {
+    const newItem: PVItem = {
       id: Date.now().toString(),
       description: "",
       qty: 0,
       unitPrice: 0,
       totalAmount: 0,
     };
-    setEditPvrItems([...editPvrItems, newItem]);
+    setEditPvItems([...editPvItems, newItem]);
   };
 
   const handleSaveEdit = () => {
@@ -1163,9 +1228,9 @@ export default function PVR({
     // Track changes for audit trail
     const changes: string[] = [];
 
-    if (selectedDetail.pvrDate !== editFormData.pvrDate) {
+    if (selectedDetail.pvDate !== editFormData.pvDate) {
       changes.push(
-        `PVR Date: "${selectedDetail.pvrDate}" → "${editFormData.pvrDate}"`,
+        `PV Date: "${selectedDetail.pvDate}" â†’ "${editFormData.pvDate}"`,
       );
     }
     if (
@@ -1173,24 +1238,24 @@ export default function PVR({
       editFormData.docReceiptDate
     ) {
       changes.push(
-        `Doc Receipt Date: "${selectedDetail.docReceiptDate}" → "${editFormData.docReceiptDate}"`,
+        `Doc Receipt Date: "${selectedDetail.docReceiptDate}" â†’ "${editFormData.docReceiptDate}"`,
       );
     }
     if (selectedDetail.term !== editFormData.term) {
       changes.push(
-        `Term: "${selectedDetail.term}" → "${editFormData.term}"`,
+        `Term: "${selectedDetail.term}" â†’ "${editFormData.term}"`,
       );
     }
     if (
       selectedDetail.supplierName !== editFormData.supplierName
     ) {
       changes.push(
-        `Supplier Name: "${selectedDetail.supplierName}" → "${editFormData.supplierName}"`,
+        `Supplier Name: "${selectedDetail.supplierName}" â†’ "${editFormData.supplierName}"`,
       );
     }
     if (selectedDetail.currency !== editFormData.currency) {
       changes.push(
-        `Currency: "${selectedDetail.currency}" → "${editFormData.currency}"`,
+        `Currency: "${selectedDetail.currency}" â†’ "${editFormData.currency}"`,
       );
     }
     if (
@@ -1198,17 +1263,17 @@ export default function PVR({
       editFormData.paymentMethod
     ) {
       changes.push(
-        `Payment Method: "${selectedDetail.paymentMethod}" → "${editFormData.paymentMethod}"`,
+        `Payment Method: "${selectedDetail.paymentMethod}" â†’ "${editFormData.paymentMethod}"`,
       );
     }
     if (selectedDetail.remarks !== editFormData.remarks) {
       changes.push(
-        `Remarks: "${selectedDetail.remarks}" → "${editFormData.remarks}"`,
+        `Remarks: "${selectedDetail.remarks}" â†’ "${editFormData.remarks}"`,
       );
     }
     if (selectedDetail.pt !== editFormData.pt) {
       changes.push(
-        `PT: "${selectedDetail.pt}" → "${editFormData.pt}"`,
+        `PT: "${selectedDetail.pt}" â†’ "${editFormData.pt}"`,
       );
     }
 
@@ -1216,15 +1281,15 @@ export default function PVR({
     let totalInvoice = 0;
     let allLinkedDocs: LinkedPIDocument[] = [];
     const processedPOs = new Set<string>();
-    
+
     if (editLinkedPIs.length > 0) {
       // Add all selected documents first - with amountPaid from localStorage
       editLinkedPIs.forEach((doc) => {
         // Check localStorage for amountPaid value
-        const docStorageKey = `pvr_edit_doc_${doc.id}`;
+        const docStorageKey = `pv_edit_doc_${doc.id}`;
         const savedData = localStorage.getItem(docStorageKey);
         let amountPaid = doc.totalAmount; // default to full amount
-        
+
         if (savedData) {
           try {
             const parsed = JSON.parse(savedData);
@@ -1232,9 +1297,9 @@ export default function PVR({
               amountPaid = parseFormattedNumber(parsed.amountPaid[0].amount);
               console.log(`[handleSaveEdit] Saving doc ${doc.id} with amountPaid: ${amountPaid} (from localStorage)`);
             }
-          } catch {}
+          } catch { }
         }
-        
+
         // Ensure poNo contains the actual PO number, not just the poId
         let actualPoNo = doc.poNo;
         if (doc.poNo && doc.poNo.startsWith("po_")) {
@@ -1243,7 +1308,7 @@ export default function PVR({
           actualPoNo = targetPO ? targetPO.purchaseOrderNo : doc.poNo;
           console.log(`[handleSaveEdit] Converting poId ${doc.poNo} to purchaseOrderNo ${actualPoNo}`);
         }
-        
+
         // Add amountPaid to the doc being saved and ensure correct poNo
         const docWithAmount = {
           ...doc,
@@ -1252,12 +1317,12 @@ export default function PVR({
         };
         allLinkedDocs.push(docWithAmount);
         console.log(`[handleSaveEdit] Added to allLinkedDocs: doc.id=${doc.id}, amountPaid=${docWithAmount.amountPaid}, poNo=${docWithAmount.poNo}`);
-        
+
         if (doc.documentType === "PO") {
           processedPOs.add(actualPoNo);
         }
       });
-      
+
       // Calculate totals from main documents only
       const filteredDocs = editLinkedPIs.filter(
         (doc) =>
@@ -1268,29 +1333,29 @@ export default function PVR({
           doc.piNo &&
           doc.piNo.trim() !== "",
       );
-      
+
       // Calculate total amount paid from localStorage
       let totalAmountPaid = 0;
       filteredDocs.forEach((doc) => {
-        const docStorageKey = `pvr_edit_doc_${doc.id}`;
+        const docStorageKey = `pv_edit_doc_${doc.id}`;
         const savedData = localStorage.getItem(docStorageKey);
         let amountPaid = doc.totalAmount;
-        
+
         if (savedData) {
           try {
             const parsed = JSON.parse(savedData);
             if (parsed.amountPaid && Array.isArray(parsed.amountPaid) && parsed.amountPaid.length > 0) {
               amountPaid = parseFormattedNumber(parsed.amountPaid[0].amount);
             }
-          } catch {}
+          } catch { }
         }
         totalAmountPaid += amountPaid;
       });
-      
+
       // Calculate total discount from localStorage
       let totalDiscount = 0;
       filteredDocs.forEach((doc) => {
-        const docStorageKey = `pvr_edit_doc_${doc.id}`;
+        const docStorageKey = `pv_edit_doc_${doc.id}`;
         const savedData = localStorage.getItem(docStorageKey);
         if (savedData) {
           try {
@@ -1298,12 +1363,12 @@ export default function PVR({
             if (parsed.discount) {
               totalDiscount += parseFormattedNumber(parsed.discount);
             }
-          } catch {}
+          } catch { }
         }
       });
-      
+
       totalInvoice = totalAmountPaid - totalDiscount;
-      
+
       // Then find and add related POs for main documents that don't already have a PO selected
       editLinkedPIs.forEach((doc) => {
         if ((doc.documentType === "PI" || doc.documentType === "IC" || doc.documentType === "SR") && doc.poNo && !processedPOs.has(doc.poNo)) {
@@ -1330,7 +1395,7 @@ export default function PVR({
 
     if (selectedDetail.totalInvoice !== totalInvoice) {
       changes.push(
-        `Total Invoice: "${selectedDetail.totalInvoice}" → "${totalInvoice}"`,
+        `Total Invoice: "${selectedDetail.totalInvoice}" â†’ "${totalInvoice}"`,
       );
     }
 
@@ -1343,10 +1408,10 @@ export default function PVR({
       console.log(`[handleSaveEdit] Found PO for poId ${poId}: ${poNumber}`);
     }
 
-    // Update the PVR with dates converted back to storage format
-    const updatedPVR = {
+    // Update the PV with dates converted back to storage format
+    const updatedPV = {
       ...editFormData,
-      pvrDate: convertToStorageDate(editFormData.pvrDate),
+      pvDate: convertToStorageDate(editFormData.pvDate),
       docReceiptDate: convertToStorageDate(
         editFormData.docReceiptDate,
       ),
@@ -1355,15 +1420,15 @@ export default function PVR({
       poNumber: poNumber,
     };
 
-    console.log(`[handleSaveEdit] Saving PVR with ${allLinkedDocs.length} documents. poNumber: ${poNumber}`);
+    console.log(`[handleSaveEdit] Saving PV with ${allLinkedDocs.length} documents. poNumber: ${poNumber}`);
     allLinkedDocs.forEach((doc) => {
       console.log(`[handleSaveEdit] linkedDocs - id=${doc.id}, amountPaid=${doc.amountPaid}, poNo=${doc.poNo}`);
     });
 
-    const updatedData = pvrData.map((pvr) =>
-      pvr.id === selectedDetail.id ? updatedPVR : pvr,
+    const updatedData = pvData.map((pv) =>
+      pv.id === selectedDetail.id ? updatedPV : pv,
     );
-    setPvrData(updatedData);
+    setPvData(updatedData);
 
     // Note: Do NOT clear localStorage cache for documents - discount data needs to persist
     // The discount details saved in discount dialog should remain in localStorage
@@ -1385,14 +1450,14 @@ export default function PVR({
     setShowEditDialog(false);
     setEditFormData(null);
     setEditLinkedPIs([]);
-    setEditPvrItems([]);
+    setEditPvItems([]);
 
     // Update selectedDetail with the saved data and show detail dialog
     setSelectedDetail({
-      ...updatedPVR,
-      pvrDate: convertToDisplayDate(updatedPVR.pvrDate),
+      ...updatedPV,
+      pvDate: convertToDisplayDate(updatedPV.pvDate),
       docReceiptDate: convertToDisplayDate(
-        updatedPVR.docReceiptDate,
+        updatedPV.docReceiptDate,
       ),
     });
 
@@ -1402,21 +1467,21 @@ export default function PVR({
   };
 
   // Filter data
-  const filteredData = pvrData.filter((pvr) => {
+  const filteredData = pvData.filter((pv) => {
     const searchLower = searchTerm.toLowerCase();
     const matchesSearch =
-      pvr.pvrNo.toLowerCase().includes(searchLower) ||
-      pvr.poNumber.toLowerCase().includes(searchLower) ||
-      pvr.linkedDocs?.some((doc) =>
+      pv.pvNo.toLowerCase().includes(searchLower) ||
+      (pv.poNumber?.toLowerCase() || "").includes(searchLower) ||
+      pv.linkedDocs?.some((doc) =>
         doc.invoiceNo.toLowerCase().includes(searchLower),
       );
 
     const matchesPT =
-      ptFilter === "ALL PT" || pvr.pt === ptFilter;
+      ptFilter === "ALL PT" || pv.pt === ptFilter;
     const matchesPIC =
-      picPIFilter === "all" || pvr.createdBy === picPIFilter;
+      picPIFilter === "all" || pv.createdBy === picPIFilter;
     const matchesSubmitted =
-      submittedFilter === "submitted" ? pvr.isSubmitted : true;
+      submittedFilter === "submitted" ? pv.isSubmitted : true;
 
     return (
       matchesSearch &&
@@ -1427,19 +1492,19 @@ export default function PVR({
   });
 
   // Calculate stats
-  const overseasCount = pvrData.filter(
+  const overseasCount = pvData.filter(
     (p) => p.supplierCategory === "OVERSEAS",
   ).length;
-  const localCount = pvrData.filter(
+  const localCount = pvData.filter(
     (p) => p.supplierCategory === "LOCAL",
   ).length;
-  const urgentCount = pvrData.filter(
+  const urgentCount = pvData.filter(
     (p) => p.term === "URGENT",
   ).length;
-  const creditCount = pvrData.filter(
+  const creditCount = pvData.filter(
     (p) => p.term === "CREDIT",
   ).length;
-  const submittedCount = pvrData.filter(
+  const submittedCount = pvData.filter(
     (p) => p.isSubmitted === true,
   ).length;
 
@@ -1465,11 +1530,10 @@ export default function PVR({
             }
             className={`
             flex-1 px-3 py-1.5 rounded-full font-medium text-xs transition-all
-            ${
-              activeFilterType === "pt" || ptFilter !== "ALL PT"
+            ${activeFilterType === "pt" || ptFilter !== "ALL PT"
                 ? "bg-gradient-to-r from-purple-600 to-purple-700 text-white shadow-md"
                 : "bg-white text-gray-600 border border-gray-300 hover:border-purple-400 hover:text-purple-600"
-            }
+              }
           `}
           >
             {ptFilter === "ALL PT" ? "ALL PT" : ptFilter}
@@ -1484,12 +1548,11 @@ export default function PVR({
             }
             className={`
             flex-1 px-3 py-1.5 rounded-full font-medium text-xs transition-all
-            ${
-              activeFilterType === "pic" ||
-              picPIFilter !== "all"
+            ${activeFilterType === "pic" ||
+                picPIFilter !== "all"
                 ? "bg-gradient-to-r from-purple-600 to-purple-700 text-white shadow-md"
                 : "bg-white text-gray-600 border border-gray-300 hover:border-purple-400 hover:text-purple-600"
-            }
+              }
           `}
           >
             {picPIFilter === "all" ? "ALL PIC" : picPIFilter}
@@ -1519,11 +1582,10 @@ export default function PVR({
                   }}
                   className={`
                   flex-1 px-3 py-1.5 rounded-full font-medium text-xs transition-all
-                  ${
-                    isSelected
+                  ${isSelected
                       ? "bg-gradient-to-r from-purple-600 to-purple-700 text-white shadow-md"
                       : "bg-white text-gray-600 border border-gray-300 hover:border-purple-400 hover:text-purple-600"
-                  }
+                    }
                 `}
                 >
                   {key === "all" ? "ALL PT" : key}
@@ -1557,11 +1619,10 @@ export default function PVR({
                   }}
                   className={`
                   flex-1 px-3 py-1.5 rounded-full font-medium text-xs transition-all
-                  ${
-                    isSelected
+                  ${isSelected
                       ? "bg-gradient-to-r from-purple-600 to-purple-700 text-white shadow-md"
                       : "bg-white text-gray-600 border border-gray-300 hover:border-purple-400 hover:text-purple-600"
-                  }
+                    }
                 `}
                 >
                   {key === "all" ? "ALL PIC" : key}
@@ -1573,7 +1634,20 @@ export default function PVR({
         {/* Header with buttons */}
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-purple-900"></h2>
+          <div className="flex justify-start items-center gap-3">
+            {/* User Note*/}
+            <p className="mt-2 text-xs text-red-500 italic">
+              Note for User :
+              <br />
+              PV Ver 2 adalah pengganti jika PV ditiadakan
+              <br />
+              Create PV oleh Tim PI Overseas & Tim AP Lokal (pengganti create pv)
+              <br />
+              Approve PV oleh Tim Kasir (pengganti create PV)
+            </p>
+          </div>
           <div className="flex justify-end items-center gap-3">
+
             {/* Clear Filter Button - Only show when filters are active */}
             {(ptFilter !== "ALL PT" || picPIFilter !== "all" || submittedFilter !== "unsubmitted") && (
               <Button
@@ -1586,7 +1660,7 @@ export default function PVR({
                 variant="outline"
                 className="px-3 py-1 rounded-full text-xs font-medium transition-colors border-2 bg-red-100 text-red-700 border-red-300 hover:bg-red-200"
               >
-                ✕ Clear Filters
+                âœ• Clear Filters
               </Button>
             )}
 
@@ -1627,8 +1701,8 @@ export default function PVR({
                 <ChevronDown className="h-4 w-4" />
               )}
               {expandAll ? "Collapse All" : "Expand All"}
-              </Button>
-      
+            </Button>
+
             <Button
               onClick={() => setShowCreateDialog(true)}
               className="bg-purple-600 hover:bg-purple-700"
@@ -1636,11 +1710,11 @@ export default function PVR({
               <Plus className="h-4 w-4 mr-2" />
               Create
             </Button>
-                  
+
             <Button
               onClick={() => {
                 setShowSubmitDialog(true);
-                setSelectedPVRsForSubmit([]);
+                setSelectedPVsForSubmit([]);
               }}
               className="bg-green-600 hover:bg-green-700"
             >
@@ -1655,11 +1729,10 @@ export default function PVR({
                     : "unsubmitted",
                 )
               }
-              className={`${
-                submittedFilter === "submitted"
+              className={`${submittedFilter === "submitted"
                   ? "bg-blue-600 hover:bg-blue-700"
                   : "bg-gray-400 hover:bg-gray-500"
-              }`}
+                }`}
             >
               {submittedFilter === "submitted" ? (
                 <CheckCircle2 className="h-4 w-4 mr-2" />
@@ -1676,7 +1749,7 @@ export default function PVR({
           <div className="flex-1 relative">
             <Input
               type="text"
-              placeholder="Search by PVR No or Invoice No..."
+              placeholder="Search by PV No or Invoice No..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="border-purple-200 focus:border-purple-400 focus:ring-purple-400"
@@ -1686,459 +1759,447 @@ export default function PVR({
 
         {/* Content Area - Toggle between Normal View and Submit View */}
         <div className="space-y-3">
-            {/* Document Counter */}
-            <div className="text-sm text-gray-600">
-              Showing{" "}
-              <span className="font-semibold text-purple-700">
-                {filteredData.length}
-              </span>{" "}
-              of{" "}
-              <span className="font-semibold text-purple-700">
-                {pvrData.length}
-              </span>{" "}
-              documents
-            </div>
+          {/* Document Counter */}
+          <div className="text-sm text-gray-600">
+            Showing{" "}
+            <span className="font-semibold text-purple-700">
+              {filteredData.length}
+            </span>{" "}
+            of{" "}
+            <span className="font-semibold text-purple-700">
+              {pvData.length}
+            </span>{" "}
+            documents
+          </div>
 
-            {/* PVR Cards Grid */}
-            <div className="space-y-3">
-              {filteredData.map((pvr) => {
-                const isExpanded = expandedItems.has(pvr.id);
+          {/* PV Cards Grid */}
+          <div className="space-y-3">
+            {filteredData.map((pv) => {
+              const isExpanded = expandedItems.has(pv.id);
 
-                return (
-                  <motion.div
-                    key={pvr.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="bg-white rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 overflow-hidden border border-purple-100"
-                    style={{
-                      background:
-                        "linear-gradient(135deg, #DCCCEC 0%, #E8DDEF 15%, #F0E6F3 30%, #F4EDFA 45%, #F8F5FC 60%, #FAFAFF 75%, #FCFCFF 85%, #FFFFFF 100%)",
-                    }}
+              return (
+                <motion.div
+                  id={`pv-card-${pv.pvNo}`}
+                  key={pv.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-white rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 overflow-hidden border border-purple-100"
+                  style={{
+                    background:
+                      "linear-gradient(135deg, #DCCCEC 0%, #E8DDEF 15%, #F0E6F3 30%, #F4EDFA 45%, #F8F5FC 60%, #FAFAFF 75%, #FCFCFF 85%, #FFFFFF 100%)",
+                  }}
+                >
+                  {/* Collapsed View */}
+                  <button
+                    onClick={() => toggleExpand(pv.id)}
+                    className="w-full p-6 text-left hover:bg-purple-50/30 transition-colors"
                   >
-                    {/* Collapsed View */}
-                    <button
-                      onClick={() => toggleExpand(pvr.id)}
-                      className="w-full p-6 text-left hover:bg-purple-50/30 transition-colors"
-                    >
-                      <div className="flex items-center justify-between gap-4">
-                        {/* Left Section */}
-                        <div className="flex items-center gap-4 flex-1 min-w-0">
-                          {/* Icon & ID */}
-                          <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-purple-700 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg shadow-purple-500/30">
-                              <Receipt className="w-6 h-6 text-white" />
+                    <div className="flex items-center justify-between gap-4">
+                      {/* Left Section */}
+                      <div className="flex items-center gap-4 flex-1 min-w-0">
+                        {/* Icon & ID */}
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-purple-700 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg shadow-purple-500/30">
+                            <Receipt className="w-6 h-6 text-white" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Hash className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                              <span className="text-gray-900 font-mono min-w-[150px]">
+                                {pv.pvNo}
+                              </span>
                             </div>
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2 mb-1">
-                                <Hash className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                                <span className="text-gray-900 font-mono min-w-[150px]">
-                                  {pvr.pvrNo}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-2 mb-1">
-                                <Badge
-                                  variant="outline"
-                                  className={
-                                    (pvr.supplierCategory ||
-                                      "LOCAL") === "OVERSEAS"
-                                      ? "border-blue-300 text-blue-700 bg-blue-50"
-                                      : "border-green-300 text-green-700 bg-green-50"
-                                  }
-                                >
-                                  {(pvr.supplierCategory || "LOCAL") ===
+                            <div className="flex items-center gap-2 mb-1">
+                              <Badge
+                                variant="outline"
+                                className={
+                                  (pv.supplierCategory ||
+                                    "LOCAL") === "OVERSEAS"
+                                    ? "border-blue-300 text-blue-700 bg-blue-50"
+                                    : "border-green-300 text-green-700 bg-green-50"
+                                }
+                              >
+                                {(pv.supplierCategory || "LOCAL") ===
                                   "OVERSEAS" ? (
-                                    <Globe2 className="h-3 w-3 mr-1" />
-                                  ) : (
-                                    <MapPin className="h-3 w-3 mr-1" />
-                                  )}
-                                  {(pvr.supplierCategory || "LOCAL")
-                                    .charAt(0)
-                                    .toUpperCase() +
-                                    (pvr.supplierCategory || "LOCAL")
-                                      .slice(1)
-                                      .toLowerCase()}
-                                </Badge>
-                                <Badge
-                                  variant="outline"
-                                  className={
-                                    (pvr.term || "CREDIT") === "URGENT"
-                                      ? "border-blue-300 text-blue-700 bg-blue-50"
-                                      : "border-green-300 text-green-700 bg-green-50"
-                                  }
-                                >
-                                  {(pvr.term || "CREDIT")
-                                    .charAt(0)
-                                    .toUpperCase() +
-                                    (pvr.term || "CREDIT")
-                                      .slice(1)
-                                      .toLowerCase()}
-                                </Badge>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <Badge
-                                  variant="outline"
-                                  className="bg-purple-50 text-purple-700 border-purple-200"
-                                >
-                                  {pvr.pt || "N/A"}
-                                </Badge>
-                                <Building2 className="w-3.5 h-3.5 text-purple-600 flex-shrink-0" />
-                                <span className="text-gray-700 text-sm truncate">
-                                  {pvr.supplierName}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Right Section */}
-                        <div className="flex items-center gap-6 flex-shrink-0">
-                          {/* Approved Badge - Desktop */}
-                          <div className="hidden md:flex items-center gap-2 flex-shrink-0">
-                            {(() => {
-                              const supplier =
-                                supplierMasterData.find(
-                                  (s) =>
-                                    s.name === pvr.supplierName,
-                                );
-                              return supplier?.isApproved ? (
-                                <Badge
-                                  variant="outline"
-                                  className="bg-emerald-100 text-emerald-700 border-emerald-200"
-                                >
-                                  <CheckCircle2 className="w-3 h-3 mr-1" />
-                                  Approved
-                                </Badge>
-                              ) : (
-                                <Badge
-                                  variant="outline"
-                                  className="bg-yellow-100 text-yellow-700 border-yellow-200"
-                                >
-                                  <Clock className="w-3 h-3 mr-1" />
-                                  Pending
-                                </Badge>
-                              );
-                            })()}
-                          </div>
-
-                          {/* Voided Badge - Desktop */}
-                          {pvr.status === "voided" && (
-                            <div className="hidden md:flex items-center gap-2 flex-shrink-0">
-                              <Badge
-                                variant="outline"
-                                className="border-red-300 text-red-700 bg-red-50"
-                              >
-                                <XCircle className="w-3 h-3 mr-1" />
-                                Voided
-                              </Badge>
-                            </div>
-                          )}
-
-                          {/* Submitted Badge - Desktop */}
-                          {pvr.status !== "voided" && (
-                            <div className="hidden md:flex items-center gap-2 flex-shrink-0">
-                              <Badge
-                                variant="outline"
-                                className={`cursor-pointer transition-colors ${
-                                  pvr.isSubmitted
-                                    ? "border-green-300 text-green-700 bg-green-50 hover:bg-green-100"
-                                    : "border-gray-300 text-gray-700 bg-gray-50 hover:bg-gray-100"
-                                }`}
-                              >
-                                {pvr.isSubmitted ? (
-                                  <>
-                                    <CheckCircle2 className="w-3 h-3 mr-1" />
-                                    Submit
-                                  </>
+                                  <Globe2 className="h-3 w-3 mr-1" />
                                 ) : (
-                                  <>
-                                    <ClockIcon className="w-3 h-3 mr-1" />
-                                    Submit
-                                  </>
+                                  <MapPin className="h-3 w-3 mr-1" />
                                 )}
+                                {(pv.supplierCategory || "LOCAL")
+                                  .charAt(0)
+                                  .toUpperCase() +
+                                  (pv.supplierCategory || "LOCAL")
+                                    .slice(1)
+                                    .toLowerCase()}
+                              </Badge>
+                              <Badge
+                                variant="outline"
+                                className={
+                                  (pv.term || "CREDIT") === "URGENT"
+                                    ? "border-blue-300 text-blue-700 bg-blue-50"
+                                    : "border-green-300 text-green-700 bg-green-50"
+                                }
+                              >
+                                {(pv.term || "CREDIT")
+                                  .charAt(0)
+                                  .toUpperCase() +
+                                  (pv.term || "CREDIT")
+                                    .slice(1)
+                                    .toLowerCase()}
                               </Badge>
                             </div>
-                          )}
-
-                          {/* Total Invoice tandai*/}
-                          <div className="flex items-center bg-gradient-to-r from-green-50 to-emerald-50 px-2 py-1 rounded-lg border border-green-200">
-                            <div className="flex justify-between items-center w-36">
-                              <span className="text-green-900 font-medium text-sm">
-                                {pvr.currency || "IDR"}
-                              </span>
-                              <span className="text-green-900 font-medium text-sm text-right">
-                                {(() => {
-                                  // Calculate grand total from localStorage data
-                                  let grandTotal = 0;
-                                  if (pvr.linkedDocs && pvr.linkedDocs.length > 0) {
-                                    const filteredDocs = pvr.linkedDocs.filter(
-                                      (doc) =>
-                                        (doc.documentType === "PI" ||
-                                          doc.documentType === "SR" ||
-                                          doc.documentType === "IC" ||
-                                          doc.documentType === "EN") &&
-                                        doc.piNo &&
-                                        doc.piNo.trim() !== "",
-                                    );
-                                    
-                                    let totalAmountPaid = 0;
-                                    let totalDiscount = 0;
-                                    
-                                    filteredDocs.forEach((doc) => {
-                                      const docStorageKey = `pvr_edit_doc_${doc.id}`;
-                                      const savedData = localStorage.getItem(docStorageKey);
-                                      
-                                      let amountPaid = doc.totalAmount;
-                                      let discount = 0;
-                                      
-                                      if (savedData) {
-                                        try {
-                                          const parsed = JSON.parse(savedData);
-                                          if (parsed.amountPaid && Array.isArray(parsed.amountPaid) && parsed.amountPaid.length > 0) {
-                                            amountPaid = parseFormattedNumber(parsed.amountPaid[0].amount);
-                                          }
-                                          if (parsed.discount) {
-                                            discount = parseFormattedNumber(parsed.discount);
-                                          }
-                                        } catch {}
-                                      }
-                                      
-                                      totalAmountPaid += amountPaid;
-                                      totalDiscount += discount;
-                                    });
-                                    
-                                    grandTotal = totalAmountPaid - totalDiscount;
-                                  } else {
-                                    grandTotal = pvr.totalInvoice || 0;
-                                  }
-                                  
-                                  return formatNumber(grandTotal);
-                                })()}
+                            <div className="flex items-center gap-2">
+                              <Badge
+                                variant="outline"
+                                className="bg-purple-50 text-purple-700 border-purple-200"
+                              >
+                                {pv.pt || "N/A"}
+                              </Badge>
+                              <Building2 className="w-3.5 h-3.5 text-purple-600 flex-shrink-0" />
+                              <span className="text-gray-700 text-sm truncate">
+                                {pv.supplierName}
                               </span>
                             </div>
                           </div>
-
-                          {/* Expand Icon */}
-                          <motion.div
-                            animate={{
-                              rotate: isExpanded ? 180 : 0,
-                            }}
-                            transition={{ duration: 0.3 }}
-                            className="flex-shrink-0"
-                          >
-                            <ChevronDown className="w-5 h-5 text-gray-400" />
-                          </motion.div>
                         </div>
                       </div>
-                    </button>
 
-                    {/* Expanded View */}
-                    <div
-                      className={`overflow-hidden transition-all duration-300 ease-in-out ${
-                        isExpanded
-                          ? "max-h-screen opacity-100"
-                          : "max-h-0 opacity-0"
-                      }`}
-                    >
-                      <div className="px-6 pb-6 space-y-4 border-t border-purple-200">
-                        {/* Details Grid */}
-                        <div className="w-full p-6 bg-white rounded-xl border border-gray-200 mt-4">
-                          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                            {/* Doc Receipt Date */}
-                            <div>
-                              <div className="flex items-center gap-2 mb-2">
-                                <Calendar className="w-4 h-4 text-purple-600" />
-                                <span className="text-gray-600 text-sm">
-                                  Doc Receipt Date
-                                </span>
-                              </div>
-                              <div className="text-gray-900">
-                                {formatDateToDDMMYYYY(
-                                  pvr.docReceiptDate,
-                                )}
-                              </div>
-                            </div>
+                      {/* Right Section */}
+                      <div className="flex items-center gap-6 flex-shrink-0">
+                                                {/* Submitted Badge - Desktop */}
+                        {pv.status !== "voided" && (
+                          <div className="hidden md:flex items-center gap-2 flex-shrink-0">
+                            <Badge
+                              variant="outline"
+                              className={`cursor-pointer transition-colors ${pv.isSubmitted
+                                  ? "border-green-300 text-green-700 bg-green-50 hover:bg-green-100"
+                                  : "border-gray-300 text-gray-700 bg-gray-50 hover:bg-gray-100"
+                                }`}
+                            >
+                              {pv.isSubmitted ? (
+                                <>
+                                  <CheckCircle2 className="w-3 h-3 mr-1" />
+                                  Submit
+                                </>
+                              ) : (
+                                <>
+                                  <ClockIcon className="w-3 h-3 mr-1" />
+                                  Submit
+                                </>
+                              )}
+                            </Badge>
+                          </div>
+                        )}
 
-                            {/* PVR Create Date */}
-                            <div>
-                              <div className="flex items-center gap-2 mb-2">
-                                <Calendar className="w-4 h-4 text-purple-600" />
-                                <span className="text-gray-600 text-sm">
-                                  PVR Create Date
-                                </span>
-                              </div>
-                              <div className="text-gray-900 ">
-                                {formatDateToDDMMYYYY(
-                                  pvr.pvrDate,
-                                )}
-                              </div>
-                            </div>
+                        {/* Approved Badge - Desktop */}
+                        <div className="hidden md:flex items-center gap-2 flex-shrink-0">
+                          {pv.isApproved ? (
+                            <Badge
+                              variant="outline"
+                              className="bg-emerald-100 text-emerald-700 border-emerald-200"
+                            >
+                              <CheckCircle2 className="w-3 h-3 mr-1" />
+                              Approved
+                            </Badge>
+                          ) : (
+                            <Badge
+                              variant="outline"
+                              className="bg-yellow-100 text-yellow-700 border-yellow-200"
+                            >
+                              <Clock className="w-3 h-3 mr-1" />
+                              Pending
+                            </Badge>
+                          )}
+                        </div>
 
-                            {/* Payment Method */}
-                            <div>
-                              <div className="flex items-center gap-2 mb-2">
-                                <CreditCard className="w-4 h-4 text-purple-600" />
-                                <span className="text-gray-600 text-sm">
-                                  Payment Method
-                                </span>
-                              </div>
-                              <div className="text-gray-900 ">
-                                {pvr.paymentMethod}
-                              </div>
-                            </div>
 
-                            {/* Created By */}
-                            <div>
-                              <div className="flex items-center gap-2 mb-2">
-                                <User className="w-4 h-4 text-purple-600" />
-                                <span className="text-gray-600 text-sm">
-                                  Created By
-                                </span>
-                              </div>
-                              <div className="text-gray-900 ">
-                                {pvr.createdBy}
-                              </div>
-                            </div>
+
+                        {/* Voided Badge - Desktop */}
+                        {pv.status === "voided" && (
+                          <div className="hidden md:flex items-center gap-2 flex-shrink-0">
+                            <Badge
+                              variant="outline"
+                              className="border-red-300 text-red-700 bg-red-50"
+                            >
+                              <XCircle className="w-3 h-3 mr-1" />
+                              Voided
+                            </Badge>
+                          </div>
+                        )}
+
+
+
+                        {/* Total Invoice tandai*/}
+                        <div className="flex items-center bg-gradient-to-r from-green-50 to-emerald-50 px-2 py-1 rounded-lg border border-green-200">
+                          <div className="flex justify-between items-center w-36">
+                            <span className="text-green-900 font-medium text-sm">
+                              {pv.currency || "IDR"}
+                            </span>
+                            <span className="text-green-900 font-medium text-sm text-right">
+                              {(() => {
+                                // Calculate grand total from localStorage data
+                                let grandTotal = 0;
+                                if (pv.linkedDocs && pv.linkedDocs.length > 0) {
+                                  const filteredDocs = pv.linkedDocs.filter(
+                                    (doc) =>
+                                      (doc.documentType === "PI" ||
+                                        doc.documentType === "SR" ||
+                                        doc.documentType === "IC" ||
+                                        doc.documentType === "EN") &&
+                                      doc.piNo &&
+                                      doc.piNo.trim() !== "",
+                                  );
+
+                                  let totalAmountPaid = 0;
+                                  let totalDiscount = 0;
+
+                                  filteredDocs.forEach((doc) => {
+                                    const docStorageKey = `pv_edit_doc_${doc.id}`;
+                                    const savedData = localStorage.getItem(docStorageKey);
+
+                                    let amountPaid = doc.totalAmount;
+                                    let discount = 0;
+
+                                    if (savedData) {
+                                      try {
+                                        const parsed = JSON.parse(savedData);
+                                        if (parsed.amountPaid && Array.isArray(parsed.amountPaid) && parsed.amountPaid.length > 0) {
+                                          amountPaid = parseFormattedNumber(parsed.amountPaid[0].amount);
+                                        }
+                                        if (parsed.discount) {
+                                          discount = parseFormattedNumber(parsed.discount);
+                                        }
+                                      } catch { }
+                                    }
+
+                                    totalAmountPaid += amountPaid;
+                                    totalDiscount += discount;
+                                  });
+
+                                  grandTotal = totalAmountPaid - totalDiscount;
+                                } else {
+                                  grandTotal = pv.totalInvoice || 0;
+                                }
+
+                                return formatNumber(grandTotal);
+                              })()}
+                            </span>
                           </div>
                         </div>
 
-                        {/* Actions */}
-                        <div className="mt-6 flex items-center gap-3 flex-wrap">
-                          {/* View Details Button */}
-                          <Button
-                            variant="outline"
-                            onClick={(
-                              e: React.MouseEvent<HTMLButtonElement>,
-                            ) => {
-                              e.stopPropagation();
-                              handleViewDetail(pvr);
-                              setActiveDetailTab("info");
-                            }}
-                            className="border-purple-300 text-purple-700 hover:bg-purple-50"
-                          >
-                            <Eye className="w-4 h-4 mr-2" />
-                            View Details
-                          </Button>
-
-                          {/* Link Button */}
-                          <Button
-                            variant="outline"
-                            onClick={(
-                              e: React.MouseEvent<HTMLButtonElement>,
-                            ) => {
-                              e.stopPropagation();
-                              setSelectedForLinkedDocs(pvr);
-                              setShowLinkedDocsDialog(true);
-                            }}
-                            className="border-blue-300 text-blue-700 hover:bg-blue-50"
-                          >
-                            <LinkIcon className="w-4 h-4 mr-2" />
-                            Link
-                          </Button>
-
-                           {/* Create Payment Voucher  */}
-                          <Button
-                            onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
-                              e.stopPropagation();
-                           // 1. Check if PV already exists for this PVR
-                              let pvData: any[] = [];
-                              try {
-                                const saved = localStorage.getItem("pvData");
-                                pvData = saved ? JSON.parse(saved) : [];
-                              } catch (err) {
-                                pvData = [];
-                              }
-                              
-                              const hasExistingPV = pvData.some((pvItem: any) => pvItem.pvrNo === pvr.pvrNo);
-                              
-                              if (hasExistingPV) {
-                                // Show warning dialog
-                                setExistingPvrNo(pvr.pvrNo);
-                                setShowPVExistsDialog(true);
-                              } else {
-                                // Auto-fill form and open Create PV dialog
-                                const today = new Date();
-                                const day = String(today.getDate()).padStart(2, "0");
-                                const month = String(today.getMonth() + 1).padStart(2, "0");
-                                const year = today.getFullYear();
-                                const todayFormatted = `${day}/${month}/${year}`;
-
-                                setPvrForm((prev: any) => ({
-                                  ...prev,
-                                  pvrNo: pvr.pvrNo,
-                                  pvrDate: todayFormatted,
-                                  supplierName: pvr.supplierName || "",
-                                  currency: pvr.currency || "IDR",
-                                  rate: pvr.rate || 1,
-                                  term: pvr.term || "Credit",
-                                  pt: pvr.pt || "",
-                                  bankAccount: pvr.bankAccount || "",
-                                  paymentMethod: pvr.paymentMethod || "Transfer",
-                                  remarks: pvr.remarks || ""
-                                }));
-                                
-                                // Auto-fill payable items and tag them with the PVR No
-                                if (pvr.linkedDocs && pvr.linkedDocs.length > 0) {
-                                  const docsWithPvrNo = pvr.linkedDocs.map((doc: any) => ({
-                                    ...doc,
-                                    id: doc.id || `${doc.documentType}-${doc.piNo}-${Math.random().toString(36).substr(2, 4)}`,
-                                    pvrNo: pvr.pvrNo,
-                                    amountPaid: doc.amountPaid || doc.totalAmount || 0
-                                  }));
-                                  setLinkedPIs(docsWithPvrNo);
-                                } else {
-                                  setLinkedPIs([]);
-                                }
-                                
-                                setShowCreatePVDialog(true);
-                              }
-                            }}
-                            className="bg-purple-600 hover:bg-purple-700"
-                          >
-                            <Receipt className="w-4 h-4 mr-2" />
-                            <span className="flex-1 text-center">
-                              Create New PV
-                            </span>
-                          </Button>
-
-                          {/* Void Button */}
-                          <Button
-                            onClick={(
-                              e: React.MouseEvent<HTMLButtonElement>,
-                            ) => {
-                              e.stopPropagation();
-                              handleVoidClick(pvr);
-                            }}
-                            disabled={pvr.status === "voided"}
-                            variant="outline"
-                            className={`${
-                              pvr.status === "voided"
-                                ? "border-gray-300 text-gray-500 bg-gray-100 cursor-not-allowed"
-                                : "border-red-200 text-red-700 hover:bg-red-50"
-                            }`}
-                          >
-                            <XCircle className="w-4 h-4 mr-2" />
-                            {pvr.status === "voided"
-                              ? "Voided"
-                              : "Void"}
-                          </Button>
-
-                         
-                        </div>
+                        {/* Expand Icon */}
+                        <motion.div
+                          animate={{
+                            rotate: isExpanded ? 180 : 0,
+                          }}
+                          transition={{ duration: 0.3 }}
+                          className="flex-shrink-0"
+                        >
+                          <ChevronDown className="w-5 h-5 text-gray-400" />
+                        </motion.div>
                       </div>
                     </div>
-                  </motion.div>
-                );
-              })}
-            </div>
+                  </button>
 
-            {filteredData.length === 0 && (
-              <div className="text-center py-12 text-gray-500">
-                <FileText className="h-12 w-12 mx-auto mb-2 opacity-20" />
-                <p>No PVRs found</p>
-              </div>
-            )}
+                  {/* Expanded View */}
+                  <div
+                    className={`overflow-hidden transition-all duration-300 ease-in-out ${isExpanded
+                        ? "max-h-screen opacity-100"
+                        : "max-h-0 opacity-0"
+                      }`}
+                  >
+                    <div className="px-6 pb-6 space-y-4 border-t border-purple-200">
+                      {/* Details Grid */}
+                      <div className="w-full p-6 bg-white rounded-xl border border-gray-200 mt-4">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                          {/* Doc Receipt Date */}
+                          <div>
+                            <div className="flex items-center gap-2 mb-2">
+                              <Calendar className="w-4 h-4 text-purple-600" />
+                              <span className="text-gray-600 text-sm">
+                                Doc Receipt Date
+                              </span>
+                            </div>
+                            <div className="text-gray-900">
+                              {formatDateToDDMMYYYY(
+                                pv.docReceiptDate,
+                              )}
+                            </div>
+                          </div>
+
+                          {/* PV Create Date */}
+                          <div>
+                            <div className="flex items-center gap-2 mb-2">
+                              <Calendar className="w-4 h-4 text-purple-600" />
+                              <span className="text-gray-600 text-sm">
+                                PV Create Date
+                              </span>
+                            </div>
+                            <div className="text-gray-900 ">
+                              {formatDateToDDMMYYYY(
+                                pv.pvDate,
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Payment Method */}
+                          <div>
+                            <div className="flex items-center gap-2 mb-2">
+                              <CreditCard className="w-4 h-4 text-purple-600" />
+                              <span className="text-gray-600 text-sm">
+                                Payment Method
+                              </span>
+                            </div>
+                            <div className="text-gray-900 ">
+                              {pv.paymentMethod}
+                            </div>
+                          </div>
+
+                          {/* Created By */}
+                          <div>
+                            <div className="flex items-center gap-2 mb-2">
+                              <User className="w-4 h-4 text-purple-600" />
+                              <span className="text-gray-600 text-sm">
+                                Created By
+                              </span>
+                            </div>
+                            <div className="text-gray-900 ">
+                              {pv.createdBy}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="mt-6 flex items-center gap-3 flex-wrap">
+                        {/* View Details Button */}
+                        <Button
+                          variant="outline"
+                          onClick={(
+                            e: React.MouseEvent<HTMLButtonElement>,
+                          ) => {
+                            e.stopPropagation();
+                            handleViewDetail(pv);
+                            setActiveDetailTab("info");
+                          }}
+                          className="border-purple-300 text-purple-700 hover:bg-purple-50"
+                        >
+                          <Eye className="w-4 h-4 mr-2" />
+                          View Details
+                        </Button>
+
+                        {/* Link Button */}
+                        <Button
+                          variant="outline"
+                          onClick={(
+                            e: React.MouseEvent<HTMLButtonElement>,
+                          ) => {
+                            e.stopPropagation();
+                            setSelectedForLinkedDocs(pv);
+                            setShowLinkedDocsDialog(true);
+                          }}
+                          className="border-blue-300 text-blue-700 hover:bg-blue-50"
+                        >
+                          <LinkIcon className="w-4 h-4 mr-2" />
+                          Link
+                        </Button>
+
+                        {/* Create Payment Voucher  */}
+                        <Button
+                          disabled={pv.isApproved}
+                          onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
+                            e.stopPropagation();
+
+                            if (!pv.isSubmitted) {
+                              // Show warning dialog if not submitted
+                              setShowSubmitWarningDialog(true);
+                            } else if (pv.isApproved) {
+                              // Show warning dialog if already approved
+                              setShowPVExistsDialog(true);
+                            } else {
+                              // Auto-fill form and open Create PV dialog
+                              const today = new Date();
+                              const day = String(today.getDate()).padStart(2, "0");
+                              const month = String(today.getMonth() + 1).padStart(2, "0");
+                              const year = today.getFullYear();
+                              const todayFormatted = `${day}/${month}/${year}`;
+
+                              setPvForm((prev: any) => ({
+                                ...prev,
+                                pvNo: pv.pvNo,
+                                pvDate: todayFormatted,
+                                supplierName: pv.supplierName || "",
+                                currency: pv.currency || "IDR",
+                                rate: pv.rate || 1,
+                                term: pv.term || "Credit",
+                                pt: pv.pt || "",
+                                bankAccount: pv.bankAccount || "",
+                                paymentMethod: pv.paymentMethod || "Transfer",
+                                remarks: pv.remarks || ""
+                              }));
+
+                              // Auto-fill payable items and tag them with the PV No
+                              if (pv.linkedDocs && pv.linkedDocs.length > 0) {
+                                const docsWithpvNo = pv.linkedDocs.map((doc: any) => ({
+                                  ...doc,
+                                  id: doc.id || `${doc.documentType}-${doc.piNo}-${Math.random().toString(36).substr(2, 4)}`,
+                                  pvNo: pv.pvNo,
+                                  amountPaid: doc.amountPaid || doc.totalAmount || 0
+                                }));
+                                setLinkedPIs(docsWithpvNo);
+                              } else {
+                                setLinkedPIs([]);
+                              }
+
+                              setShowCreatePVDialog(true);
+                            }
+                          }}
+                          className="bg-purple-600 hover:bg-purple-700"
+                        >
+                          <Receipt className="w-4 h-4 mr-2" />
+                          <span className="flex-1 text-center">
+                            Approve
+                          </span>
+                        </Button>
+
+                        {/* Void Button */}
+                        <Button
+                          onClick={(
+                            e: React.MouseEvent<HTMLButtonElement>,
+                          ) => {
+                            e.stopPropagation();
+                            handleVoidClick(pv);
+                          }}
+                          disabled={pv.status === "voided"}
+                          variant="outline"
+                          className={`${pv.status === "voided"
+                              ? "border-gray-300 text-gray-500 bg-gray-100 cursor-not-allowed"
+                              : "border-red-200 text-red-700 hover:bg-red-50"
+                            }`}
+                        >
+                          <XCircle className="w-4 h-4 mr-2" />
+                          {pv.status === "voided"
+                            ? "Voided"
+                            : "Void"}
+                        </Button>
+
+
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })}
           </div>
+
+          {filteredData.length === 0 && (
+            <div className="text-center py-12 text-gray-500">
+              <FileText className="h-12 w-12 mx-auto mb-2 opacity-20" />
+              <p>No PVs found</p>
+            </div>
+          )}
         </div>
+      </div>
 
       {/* Calendar Filter Dialog */}
       <Dialog
@@ -2193,15 +2254,14 @@ export default function PVR({
                   <PopoverTrigger asChild>
                     <Button
                       variant="outline"
-                      className={`w-full justify-start text-left font-normal ${
-                        !calendarDateFrom &&
+                      className={`w-full justify-start text-left font-normal ${!calendarDateFrom &&
                         "text-muted-foreground"
-                      } ${calendarDateFrom && !isValidDate(calendarDateFrom) ? "border-red-300 bg-red-50" : "border-purple-200"}`}
+                        } ${calendarDateFrom && !isValidDate(calendarDateFrom) ? "border-red-300 bg-red-50" : "border-purple-200"}`}
                       disabled={calendarUseTodayDate}
                     >
                       <Calendar className="mr-2 h-4 w-4" />
                       {calendarDateFrom &&
-                      isValidDate(calendarDateFrom)
+                        isValidDate(calendarDateFrom)
                         ? calendarDateFrom
                         : "Pick a date"}
                     </Button>
@@ -2214,12 +2274,12 @@ export default function PVR({
                       mode="single"
                       selected={
                         calendarDateFrom &&
-                        isValidDate(calendarDateFrom)
+                          isValidDate(calendarDateFrom)
                           ? new Date(
-                              convertToISODate(
-                                calendarDateFrom,
-                              ),
-                            )
+                            convertToISODate(
+                              calendarDateFrom,
+                            ),
+                          )
                           : undefined
                       }
                       onSelect={(date: any) => {
@@ -2308,15 +2368,14 @@ export default function PVR({
                   <PopoverTrigger asChild>
                     <Button
                       variant="outline"
-                      className={`w-full justify-start text-left font-normal ${
-                        !calendarDateTo &&
+                      className={`w-full justify-start text-left font-normal ${!calendarDateTo &&
                         "text-muted-foreground"
-                      } ${calendarDateTo && !isValidDate(calendarDateTo) ? "border-red-300 bg-red-50" : "border-purple-200"}`}
+                        } ${calendarDateTo && !isValidDate(calendarDateTo) ? "border-red-300 bg-red-50" : "border-purple-200"}`}
                       disabled={calendarUseTodayDate}
                     >
                       <Calendar className="mr-2 h-4 w-4" />
                       {calendarDateTo &&
-                      isValidDate(calendarDateTo)
+                        isValidDate(calendarDateTo)
                         ? calendarDateTo
                         : "Pick a date"}
                     </Button>
@@ -2329,10 +2388,10 @@ export default function PVR({
                       mode="single"
                       selected={
                         calendarDateTo &&
-                        isValidDate(calendarDateTo)
+                          isValidDate(calendarDateTo)
                           ? new Date(
-                              convertToISODate(calendarDateTo),
-                            )
+                            convertToISODate(calendarDateTo),
+                          )
                           : undefined
                       }
                       onSelect={(date: any) => {
@@ -2479,18 +2538,18 @@ export default function PVR({
       <Dialog open={showSubmitDialog} onOpenChange={setShowSubmitDialog}>
         <DialogContent className="w-[1800px] h-[800px] flex flex-col overflow-hidden p-0 pointer-events-auto z-50" onClick={(e: React.MouseEvent<HTMLDivElement>) => e.stopPropagation()}>
           <DialogHeader className="px-6 pt-6 pb-0 flex-shrink-0 pointer-events-auto">
-             <DialogTitle className="text-purple-900 flex items-center gap-2">
+            <DialogTitle className="text-purple-900 flex items-center gap-2">
               <Upload className="w-5 h-5" />
-              Submit PVR Documents</DialogTitle>
+              Submit Payment Voucher</DialogTitle>
           </DialogHeader>
 
-           <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6 pointer-events-auto">
+          <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6 pointer-events-auto">
             {/* Search Input */}
             <Card className="p-4">
               <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
-                  placeholder="🔍 Search by PVR No or Supplier Name..."
+                  placeholder="ðŸ” Search by PV No or Supplier Name..."
                   className="flex-1 border-purple-200 focus:border-purple-400"
                 />
               </div>
@@ -2502,9 +2561,9 @@ export default function PVR({
                 <div className="flex items-center gap-2 text-sm text-purple-700">
                   <Receipt className="h-4 w-4" />
                   <span>
-                    {selectedPVRsForSubmit.length} of{" "}
+                    {selectedPVsForSubmit.length} of{" "}
                     {
-                      pvrData.filter(
+                      pvData.filter(
                         (item) => !item.isSubmitted,
                       ).length
                     }{" "}
@@ -2515,23 +2574,23 @@ export default function PVR({
                   <Checkbox
                     id="selectAll"
                     checked={
-                      selectedPVRsForSubmit.length ===
-                        pvrData.filter(
-                          (item) => !item.isSubmitted,
-                        ).length &&
-                      pvrData.filter(
+                      selectedPVsForSubmit.length ===
+                      pvData.filter(
+                        (item) => !item.isSubmitted,
+                      ).length &&
+                      pvData.filter(
                         (item) => !item.isSubmitted,
                       ).length > 0
                     }
                     onCheckedChange={(checked: boolean) => {
                       if (checked) {
-                        setSelectedPVRsForSubmit(
-                          pvrData
+                        setSelectedPVsForSubmit(
+                          pvData
                             .filter((item) => !item.isSubmitted)
                             .map((item) => item.id),
                         );
                       } else {
-                        setSelectedPVRsForSubmit([]);
+                        setSelectedPVsForSubmit([]);
                       }
                     }}
                   />
@@ -2707,22 +2766,22 @@ export default function PVR({
                             selected={
                               submitDate
                                 ? (() => {
-                                    const parts =
-                                      submitDate.split("/");
-                                    if (
-                                      parts.length === 3 &&
-                                      parts[0].length === 2 &&
-                                      parts[1].length === 2 &&
-                                      parts[2].length === 4
-                                    ) {
-                                      return new Date(
-                                        parseInt(parts[2]),
-                                        parseInt(parts[1]) - 1,
-                                        parseInt(parts[0]),
-                                      );
-                                    }
-                                    return undefined;
-                                  })()
+                                  const parts =
+                                    submitDate.split("/");
+                                  if (
+                                    parts.length === 3 &&
+                                    parts[0].length === 2 &&
+                                    parts[1].length === 2 &&
+                                    parts[2].length === 4
+                                  ) {
+                                    return new Date(
+                                      parseInt(parts[2]),
+                                      parseInt(parts[1]) - 1,
+                                      parseInt(parts[0]),
+                                    );
+                                  }
+                                  return undefined;
+                                })()
                                 : undefined
                             }
                             onSelect={(date: Date | undefined) => {
@@ -2753,7 +2812,7 @@ export default function PVR({
             {/* Document List */}
             <div>
               <div className="border border-purple-200 rounded-lg">
-                {pvrData.filter((p) => !p.isSubmitted)
+                {pvData.filter((p) => !p.isSubmitted)
                   .length === 0 ? (
                   <div className="text-center text-gray-500 py-8">
                     <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
@@ -2767,50 +2826,50 @@ export default function PVR({
                     </div>
                   </div>
                 ) : (
-                  pvrData
+                  pvData
                     .filter((p) => !p.isSubmitted)
-                    .map((pvr) => (
+                    .map((pv) => (
                       <div
-                        key={pvr.id}
+                        key={pv.id}
                         className="flex items-center gap-3 px-4 py-3 border-b border-purple-100 last:border-b-0 hover:bg-purple-50 cursor-pointer transition-colors"
                         onClick={() => {
                           if (
-                            selectedPVRsForSubmit.includes(
-                              pvr.id,
+                            selectedPVsForSubmit.includes(
+                              pv.id,
                             )
                           ) {
-                            setSelectedPVRsForSubmit(
-                              selectedPVRsForSubmit.filter(
-                                (id) => id !== pvr.id,
+                            setSelectedPVsForSubmit(
+                              selectedPVsForSubmit.filter(
+                                (id) => id !== pv.id,
                               ),
                             );
                           } else {
-                            setSelectedPVRsForSubmit([
-                              ...selectedPVRsForSubmit,
-                              pvr.id,
+                            setSelectedPVsForSubmit([
+                              ...selectedPVsForSubmit,
+                              pv.id,
                             ]);
                           }
                         }}
                       >
                         <Checkbox
-                          checked={selectedPVRsForSubmit.includes(
-                            pvr.id,
+                          checked={selectedPVsForSubmit.includes(
+                            pv.id,
                           )}
                           onCheckedChange={() => {
                             if (
-                              selectedPVRsForSubmit.includes(
-                                pvr.id,
+                              selectedPVsForSubmit.includes(
+                                pv.id,
                               )
                             ) {
-                              setSelectedPVRsForSubmit(
-                                selectedPVRsForSubmit.filter(
-                                  (id) => id !== pvr.id,
+                              setSelectedPVsForSubmit(
+                                selectedPVsForSubmit.filter(
+                                  (id) => id !== pv.id,
                                 ),
                               );
                             } else {
-                              setSelectedPVRsForSubmit([
-                                ...selectedPVRsForSubmit,
-                                pvr.id,
+                              setSelectedPVsForSubmit([
+                                ...selectedPVsForSubmit,
+                                pv.id,
                               ]);
                             }
                           }}
@@ -2821,23 +2880,23 @@ export default function PVR({
                               variant="outline"
                               className="text-xs"
                             >
-                              {pvr.pt}
+                              {pv.pt}
                             </Badge>
                             <span className="text-sm font-medium text-purple-700">
-                              {pvr.pvrNo}
+                              {pv.pvNo}
                             </span>
                           </div>
                           <div className="text-sm text-gray-600 truncate">
-                            {pvr.supplierName}
+                            {pv.supplierName}
                           </div>
                         </div>
                         <div className="text-sm font-medium text-gray-900">
-                          {pvr.currency}{" "}
+                          {pv.currency}{" "}
                           {(() => {
                             // Calculate grand total from localStorage data
                             let grandTotal = 0;
-                            if (pvr.linkedDocs && pvr.linkedDocs.length > 0) {
-                              const filteredDocs = pvr.linkedDocs.filter(
+                            if (pv.linkedDocs && pv.linkedDocs.length > 0) {
+                              const filteredDocs = pv.linkedDocs.filter(
                                 (doc) =>
                                   (doc.documentType === "PI" ||
                                     doc.documentType === "SR" ||
@@ -2846,17 +2905,17 @@ export default function PVR({
                                   doc.piNo &&
                                   doc.piNo.trim() !== "",
                               );
-                              
+
                               let totalAmountPaid = 0;
                               let totalDiscount = 0;
-                              
+
                               filteredDocs.forEach((doc) => {
-                                const docStorageKey = `pvr_edit_doc_${doc.id}`;
+                                const docStorageKey = `pv_edit_doc_${doc.id}`;
                                 const savedData = localStorage.getItem(docStorageKey);
-                                
+
                                 let amountPaid = doc.totalAmount;
                                 let discount = 0;
-                                
+
                                 if (savedData) {
                                   try {
                                     const parsed = JSON.parse(savedData);
@@ -2866,18 +2925,18 @@ export default function PVR({
                                     if (parsed.discount) {
                                       discount = parseFormattedNumber(parsed.discount);
                                     }
-                                  } catch {}
+                                  } catch { }
                                 }
-                                
+
                                 totalAmountPaid += amountPaid;
                                 totalDiscount += discount;
                               });
-                              
+
                               grandTotal = totalAmountPaid - totalDiscount;
                             } else {
-                              grandTotal = pvr.totalInvoice || 0;
+                              grandTotal = pv.totalInvoice || 0;
                             }
-                            
+
                             return formatNumber(grandTotal);
                           })()}
                         </div>
@@ -2892,7 +2951,7 @@ export default function PVR({
             <Button
               onClick={() => {
                 setShowSubmitDialog(false);
-                setSelectedPVRsForSubmit([]);
+                setSelectedPVsForSubmit([]);
                 setSubmitTo("AP");
                 setPicName("");
                 setSubmitDate("");
@@ -2906,7 +2965,7 @@ export default function PVR({
                 setShowSubmitSummaryDialog(true);
               }}
               disabled={
-                selectedPVRsForSubmit.length === 0 ||
+                selectedPVsForSubmit.length === 0 ||
                 !submitTo ||
                 !picName.trim() ||
                 !submitDate
@@ -2914,9 +2973,9 @@ export default function PVR({
               className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400"
             >
               <Send className="h-4 w-4 mr-2" />
-              Submit {selectedPVRsForSubmit.length}{" "}
+              Submit {selectedPVsForSubmit.length}{" "}
               Document
-              {selectedPVRsForSubmit.length !== 1
+              {selectedPVsForSubmit.length !== 1
                 ? "s"
                 : ""}
             </Button>
@@ -2932,10 +2991,10 @@ export default function PVR({
         <DialogContent className="w-[1600px] h-[800px] flex flex-col overflow-hidden">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle className="text-purple-900">
-              PVR Details
+              Payment Voucher Details
             </DialogTitle>
             <DialogDescription>
-              Complete information about the selected PVR
+              Complete information about the selected Payment Voucher
             </DialogDescription>
           </DialogHeader>
 
@@ -2960,25 +3019,25 @@ export default function PVR({
                 {/* Header Info */}
                 <div className="bg-gradient-to-r from-purple-50 to-purple-100 rounded-xl p-4 border border-purple-200">
                   <div className="grid grid-cols-7 gap-3">
-                    {/* PVR Number */}
+                    {/* PV Number */}
                     <div>
                       <div className="text-xs text-purple-600 mb-1 font-semibold">
-                        PVR No
+                        PV No
                       </div>
                       <div className="font-semibold text-purple-900 text-sm">
-                        {selectedDetail.pvrNo}
+                        {selectedDetail.pvNo}
                       </div>
                     </div>
-                    {/* PVR Date */}
+                    {/* PV Date */}
                     <div>
                       <div className="text-xs text-purple-600 mb-1 font-semibold">
-                        PVR Date
+                        PV Date
                       </div>
                       <div className="font-semibold text-purple-900 text-sm">
-                        {selectedDetail.pvrDate
+                        {selectedDetail.pvDate
                           ? formatDateToDDMMYYYY(
-                              selectedDetail.pvrDate,
-                            )
+                            selectedDetail.pvDate,
+                          )
                           : "-"}
                       </div>
                     </div>
@@ -3027,6 +3086,7 @@ export default function PVR({
                       <div className="font-semibold text-purple-900 text-sm">
                         {selectedDetail.bankAccount || "-"}
                       </div>
+
                     </div>
                     {/* Method */}
                     <div>
@@ -3044,11 +3104,10 @@ export default function PVR({
                 <div className="flex items-center gap-4 border-b border-gray-200 flex-shrink-0">
                   <button
                     onClick={() => setActiveDetailTab("info")}
-                    className={`px-4 py-2 text-sm font-medium ${
-                      activeDetailTab === "info"
+                    className={`px-4 py-2 text-sm font-medium ${activeDetailTab === "info"
                         ? "text-purple-700 border-b-2 border-purple-600 bg-purple-50"
                         : "text-gray-500 hover:text-purple-700 hover:bg-purple-50"
-                    }`}
+                      }`}
                   >
                     Payable Items
                   </button>
@@ -3057,11 +3116,10 @@ export default function PVR({
                     onClick={() =>
                       setActiveDetailTab("history")
                     }
-                    className={`px-4 py-2 text-sm font-medium ${
-                      activeDetailTab === "history"
+                    className={`px-4 py-2 text-sm font-medium ${activeDetailTab === "history"
                         ? "text-purple-700 border-b-2 border-purple-600 bg-purple-50"
                         : "text-gray-500 hover:text-purple-700 hover:bg-purple-50"
-                    }`}
+                      }`}
                   >
                     Activity Log
                   </button>
@@ -3073,7 +3131,7 @@ export default function PVR({
                     <table className="w-full table-fixed">
                       <thead className="bg-purple-50 sticky top-0 z-10">
                         <tr className="h-12">
-                            <th
+                          <th
                             className="text-purple-900 text-xs text-left px-4 py-2 font-medium border-b"
                             style={{ width: "15%" }}
                           >
@@ -3085,7 +3143,7 @@ export default function PVR({
                           >
                             Doc No
                           </th>
-                        
+
                           <th
                             className="text-purple-900 text-xs text-left px-4 py-2 font-medium border-b"
                             style={{ width: "15%" }}
@@ -3144,6 +3202,8 @@ export default function PVR({
                                 doc.piNo.trim() !== "",
                             );
 
+                            
+
                           // Helper function to add days to a date (accepts DD/MM/YYYY format)
                           const addDays = (
                             dateStr: string,
@@ -3164,159 +3224,128 @@ export default function PVR({
                               const docType =
                                 doc.documentType || "PI";
                               const allocationDate =
-                                selectedDetail!.pvrDate
+                                selectedDetail!.pvDate
                                   ? formatDateToDDMMYYYY(
-                                      convertToStorageDate(
-                                        selectedDetail!.pvrDate,
-                                      ),
-                                    )
+                                    convertToStorageDate(
+                                      selectedDetail!.pvDate,
+                                    ),
+                                  )
                                   : "-";
                               const dueDate = selectedDetail!
-                                .pvrDate
+                                .pvDate
                                 ? addDays(
-                                    selectedDetail!.pvrDate,
-                                    30,
-                                  )
+                                  selectedDetail!.pvDate,
+                                  30,
+                                )
                                 : "-";
 
                               return (
                                 <React.Fragment key={doc.id}>
                                   {(() => {
-                                    // Group documents by PO number
-                                    const grouped = new Map<string, typeof filteredDocs>();
-                                    filteredDocs.forEach((d) => {
-                                      const poNum = d.poNo || "NO_PO";
-                                      if (!grouped.has(poNum)) {
-                                        grouped.set(poNum, []);
-                                      }
-                                      grouped.get(poNum)!.push(d);
-                                    });
-
-                                    // Check if this is the first document in its PO group and group has multiple docs
-                                    const docPoNo = doc.poNo || "NO_PO";
-                                    const docsInThisGroup = grouped.get(docPoNo) || [];
-                                    const isFirstInGroup = docsInThisGroup[0]?.id === doc.id && docsInThisGroup.length > 1;
-
+                                   
                                     return (
                                       <>
-                                        {isFirstInGroup && (
-                                          <tr className="bg-purple-100 h-8">
-                                            <td colSpan={6} className="px-4 py-2">
-                                              <div className="flex items-center gap-2">
-                                                <span className="text-xs font-bold text-purple-900">
-                                                  Purchase Order:
-                                                </span>
-                                                <span className="text-xs font-semibold text-purple-700">
-                                                  {doc.poNo || "No linked PO"}
-                                                </span>
-                                                <Badge className="bg-amber-100 text-amber-700 border border-amber-300 text-[10px]">
-                                                  {docsInThisGroup.length} Invoice{docsInThisGroup.length > 1 ? "s" : ""}
-                                                </Badge>
-                                              </div>
-                                            </td>
-                                          </tr>
-                                        )}
+                                   
+                                         
                                         <tr
                                           className="border-b hover:bg-purple-50"
                                         >
 
-                                  {/* VIEW DOC TYPE */}
-                                  <td className="px-4 py-3 text-sm">
-                                    {getDocumentTypeLabel(
-                                      doc.documentType || "PI",
-                                    )}
-                                  </td>
-                                  {/* VIEW DOC NO */}
-                                  <td className="px-4 py-3 text-sm truncate">
-                                    {getDocumentNumber(doc)}
-                                  </td>
-                                  
-                              
-                                  
-                                  {/* VIEW ITEM TOTAL */}
-                                  <td className="px-4 py-3 text-sm">
-                                    {formatNumber(
-                                      doc.totalAmount,
-                                    )}
-                                  </td>
-                                  {/* VIEW AMOUNT PAID */}
-                                  <td className="px-4 py-3 text-sm">
-                                    {(() => {
-                                      void tableRefreshTrigger; // Trigger dependency
-                                      const docStorageKey = `pvr_edit_doc_${doc.id}`;
-                                      const savedData = localStorage.getItem(docStorageKey);
-                                      let amountPaid = doc.totalAmount;
-                                      
-                                      if (savedData) {
-                                        try {
-                                          const parsed = JSON.parse(savedData);
-                                          if (parsed.amountPaid && Array.isArray(parsed.amountPaid) && parsed.amountPaid.length > 0) {
-                                            amountPaid = parseFormattedNumber(parsed.amountPaid[0].amount);
-                                            return parsed.amountPaid[0].amount;
-                                          }
-                                        } catch {}
-                                      } else if (doc.amountPaid) {
-                                        // Fallback to saved amountPaid from linkedDocs
-                                        amountPaid = doc.amountPaid;
-                                      }
-                                      
-                                      return formatNumber(amountPaid);
-                                    })()}
-                                  </td>
-                                  {/* VIEW Discount */}
-                                  <td className="px-4 py-3 text-sm">
-                                    <span className="text-left block text-gray-700 font-medium">
-                                      {(() => {
-                                        const docStorageKey = `pvr_edit_doc_${doc.id}`;
-                                        const savedData =
-                                          localStorage.getItem(
-                                            docStorageKey,
-                                          );
-                                        if (savedData) {
-                                          try {
-                                            const parsed =
-                                              JSON.parse(
-                                                savedData,
-                                              );
-                                            if (parsed.discount) {
-                                              return `${parsed.discount}`;
-                                            }
-                                          } catch {
-                                            return "-";
-                                          }
-                                        }
-                                        return "-";
-                                      })()}
-                                    </span>
-                                  </td>
-                                  {/* VIEW Outstanding */}
-                                  <td className="px-4 py-3 text-sm">
-                                    <span className="text-left block">
-                                      {(() => {
-                                        const docStorageKey = `pvr_edit_doc_${doc.id}`;
-                                        const savedData = localStorage.getItem(docStorageKey);
-                                        let itemTotal = doc.totalAmount;
-                                        let amountPaid = itemTotal;
-                                        
-                                        if (savedData) {
-                                          try {
-                                            const parsed = JSON.parse(savedData);
-                                            if (parsed.amountPaid && Array.isArray(parsed.amountPaid) && parsed.amountPaid.length > 0) {
-                                              amountPaid = parseFormattedNumber(parsed.amountPaid[0].amount);
-                                            }
-                                          } catch {}
-                                        }
-                                        
-                                        const outstanding = itemTotal - amountPaid;
-                                        if (outstanding > 0) {
-                                          return formatNumber(outstanding);
-                                        } else {
-                                          return formatNumber(0);
-                                        }
-                                      })()}
-                                    </span>
-                                  </td>
-                                </tr>
+                                          {/* VIEW DOC TYPE */}
+                                          <td className="px-4 py-3 text-sm">
+                                            {getDocumentTypeLabel(doc)}
+                                          </td>
+                                          {/* VIEW DOC NO */}
+                                          <td className="px-4 py-3 text-sm truncate">
+                                            {getDocumentNumber(doc)}
+                                          </td>
+
+
+
+                                          {/* VIEW ITEM TOTAL */}
+                                          <td className="px-4 py-3 text-sm">
+                                            {formatNumber(
+                                              doc.totalAmount,
+                                            )}
+                                          </td>
+                                          {/* VIEW AMOUNT PAID */}
+                                          <td className="px-4 py-3 text-sm">
+                                            {(() => {
+                                              void tableRefreshTrigger; // Trigger dependency
+                                              const docStorageKey = `pv_edit_doc_${doc.id}`;
+                                              const savedData = localStorage.getItem(docStorageKey);
+                                              let amountPaid = doc.totalAmount;
+
+                                              if (savedData) {
+                                                try {
+                                                  const parsed = JSON.parse(savedData);
+                                                  if (parsed.amountPaid && Array.isArray(parsed.amountPaid) && parsed.amountPaid.length > 0) {
+                                                    amountPaid = parseFormattedNumber(parsed.amountPaid[0].amount);
+                                                    return parsed.amountPaid[0].amount;
+                                                  }
+                                                } catch { }
+                                              } else if (doc.amountPaid) {
+                                                // Fallback to saved amountPaid from linkedDocs
+                                                amountPaid = doc.amountPaid;
+                                              }
+
+                                              return formatNumber(amountPaid);
+                                            })()}
+                                          </td>
+                                          {/* VIEW Discount */}
+                                          <td className="px-4 py-3 text-sm">
+                                            <span className="text-left block text-gray-700 font-medium">
+                                              {(() => {
+                                                const docStorageKey = `pv_edit_doc_${doc.id}`;
+                                                const savedData =
+                                                  localStorage.getItem(
+                                                    docStorageKey,
+                                                  );
+                                                if (savedData) {
+                                                  try {
+                                                    const parsed =
+                                                      JSON.parse(
+                                                        savedData,
+                                                      );
+                                                    if (parsed.discount) {
+                                                      return `${parsed.discount}`;
+                                                    }
+                                                  } catch {
+                                                    return "-";
+                                                  }
+                                                }
+                                                return "-";
+                                              })()}
+                                            </span>
+                                          </td>
+                                          {/* VIEW Outstanding */}
+                                          <td className="px-4 py-3 text-sm">
+                                            <span className="text-left block">
+                                              {(() => {
+                                                const docStorageKey = `pv_edit_doc_${doc.id}`;
+                                                const savedData = localStorage.getItem(docStorageKey);
+                                                let itemTotal = doc.totalAmount;
+                                                let amountPaid = itemTotal;
+
+                                                if (savedData) {
+                                                  try {
+                                                    const parsed = JSON.parse(savedData);
+                                                    if (parsed.amountPaid && Array.isArray(parsed.amountPaid) && parsed.amountPaid.length > 0) {
+                                                      amountPaid = parseFormattedNumber(parsed.amountPaid[0].amount);
+                                                    }
+                                                  } catch { }
+                                                }
+
+                                                const outstanding = itemTotal - amountPaid;
+                                                if (outstanding > 0) {
+                                                  return formatNumber(outstanding);
+                                                } else {
+                                                  return formatNumber(0);
+                                                }
+                                              })()}
+                                            </span>
+                                          </td>
+                                        </tr>
                                       </>
                                     );
                                   })()}
@@ -3362,6 +3391,7 @@ export default function PVR({
                       readOnly
                       placeholder="No remarks"
                       className="flex-1 resize-none min-h-[100px]"
+
                     />
                   </div>
                 </div>
@@ -3372,7 +3402,7 @@ export default function PVR({
                     {(() => {
                       // Force recalculation when tableRefreshTrigger changes
                       void tableRefreshTrigger;
-                      
+
                       // Calculate total using newest edited Amount Paid from localStorage
                       let totalAmount = 0;
                       if (selectedDetail.linkedDocs && selectedDetail.linkedDocs.length > 0) {
@@ -3387,26 +3417,26 @@ export default function PVR({
                         );
                         totalAmount = filteredDocs.reduce((sum, doc) => {
                           // Check localStorage for newest edited Amount Paid
-                          const docStorageKey = `pvr_edit_doc_${doc.id}`;
+                          const docStorageKey = `pv_edit_doc_${doc.id}`;
                           const savedData = localStorage.getItem(docStorageKey);
                           let amountPaid = doc.totalAmount;
-                          
+
                           if (savedData) {
                             try {
                               const parsed = JSON.parse(savedData);
                               if (parsed.amountPaid && Array.isArray(parsed.amountPaid) && parsed.amountPaid.length > 0) {
                                 amountPaid = parseFormattedNumber(parsed.amountPaid[0].amount);
                               }
-                            } catch {}
+                            } catch { }
                           } else if (doc.amountPaid) {
                             // Use saved amountPaid from linkedDocs if localStorage is cleared
                             amountPaid = doc.amountPaid;
                           }
-                          
+
                           return sum + amountPaid;
                         }, 0);
                       }
-                      
+
                       return (
                         <>
                           {/* Total Amount */}
@@ -3437,7 +3467,7 @@ export default function PVR({
                                 let totalDiscount = 0;
                                 if (selectedDetail.linkedDocs && selectedDetail.linkedDocs.length > 0) {
                                   selectedDetail.linkedDocs.forEach((doc) => {
-                                    const docStorageKey = `pvr_edit_doc_${doc.id}`;
+                                    const docStorageKey = `pv_edit_doc_${doc.id}`;
                                     const savedData = localStorage.getItem(docStorageKey);
                                     if (savedData) {
                                       try {
@@ -3445,7 +3475,7 @@ export default function PVR({
                                         if (parsed.discount) {
                                           totalDiscount += parseFormattedNumber(parsed.discount);
                                         }
-                                      } catch {}
+                                      } catch { }
                                     }
                                   });
                                 }
@@ -3455,7 +3485,7 @@ export default function PVR({
                             </span>
                             <span className="text-gray-700 text-sm w-4 text-left"></span>
                           </div>
-                      
+
                           {/* PPN (VAT) */}
                           <div className="flex items-center">
                             <span className="text-gray-700 text-sm flex-1 font-bold">
@@ -3498,7 +3528,7 @@ export default function PVR({
                                 let totalDiscount = 0;
                                 if (selectedDetail.linkedDocs && selectedDetail.linkedDocs.length > 0) {
                                   selectedDetail.linkedDocs.forEach((doc) => {
-                                    const docStorageKey = `pvr_edit_doc_${doc.id}`;
+                                    const docStorageKey = `pv_edit_doc_${doc.id}`;
                                     const savedData = localStorage.getItem(docStorageKey);
                                     if (savedData) {
                                       try {
@@ -3506,7 +3536,7 @@ export default function PVR({
                                         if (parsed.discount) {
                                           totalDiscount += parseFormattedNumber(parsed.discount);
                                         }
-                                      } catch {}
+                                      } catch { }
                                     }
                                   });
                                 }
@@ -3531,7 +3561,7 @@ export default function PVR({
                                 let totalDiscount = 0;
                                 if (selectedDetail.linkedDocs && selectedDetail.linkedDocs.length > 0) {
                                   selectedDetail.linkedDocs.forEach((doc) => {
-                                    const docStorageKey = `pvr_edit_doc_${doc.id}`;
+                                    const docStorageKey = `pv_edit_doc_${doc.id}`;
                                     const savedData = localStorage.getItem(docStorageKey);
                                     if (savedData) {
                                       try {
@@ -3539,7 +3569,7 @@ export default function PVR({
                                         if (parsed.discount) {
                                           totalDiscount += parseFormattedNumber(parsed.discount);
                                         }
-                                      } catch {}
+                                      } catch { }
                                     }
                                   });
                                 }
@@ -3549,12 +3579,12 @@ export default function PVR({
                                 const finalTotal =
                                   rate && rate > 0
                                     ? grandTotal *
-                                      parseFloat(
-                                        String(rate).replace(
-                                          /,/g,
-                                          ".",
-                                        ),
-                                      )
+                                    parseFloat(
+                                      String(rate).replace(
+                                        /,/g,
+                                        ".",
+                                      ),
+                                    )
                                     : grandTotal;
                                 return formatNumber(finalTotal);
                               })()}
@@ -3581,7 +3611,13 @@ export default function PVR({
                   Close
                 </Button>
                 <Button
-                  onClick={handleEdit}
+                  onClick={() => {
+                    if (selectedDetail?.isApproved) {
+                      setShowPVExistsDialog(true);
+                    } else {
+                      handleEdit();
+                    }
+                  }}
                   className="bg-blue-600 hover:bg-blue-700"
                 >
                   <Edit className="h-4 w-4 mr-2" />
@@ -3624,7 +3660,7 @@ export default function PVR({
                 </div>
                 <div className="bg-white rounded p-3 border border-purple-100">
                   <div className="text-xs text-purple-600 font-semibold mb-1">Doc Type</div>
-                  <div className="text-sm font-bold text-purple-900">{getDocumentTypeLabel(editingDocument.documentType || "PI")}</div>
+                  <div className="text-sm font-bold text-purple-900">{getDocumentTypeLabel(editingDocument)}</div>
                 </div>
                
               </div>
@@ -4035,9 +4071,9 @@ export default function PVR({
                                 ).map((d) =>
                                   d.id === detail.id
                                     ? {
-                                        ...d,
-                                        noteValue: formatted,
-                                      }
+                                      ...d,
+                                      noteValue: formatted,
+                                    }
                                     : d,
                                 ),
                               });
@@ -4086,9 +4122,9 @@ export default function PVR({
                                   ).map((d) =>
                                     d.id === detail.id
                                       ? {
-                                          ...d,
-                                          accountCode: value,
-                                        }
+                                        ...d,
+                                        accountCode: value,
+                                      }
                                       : d,
                                   ),
                                 });
@@ -4149,9 +4185,9 @@ export default function PVR({
                                   ).map((d) =>
                                     d.id === detail.id
                                       ? {
-                                          ...d,
-                                          departmentCode: value,
-                                        }
+                                        ...d,
+                                        departmentCode: value,
+                                      }
                                       : d,
                                   ),
                                 });
@@ -4212,9 +4248,9 @@ export default function PVR({
                               ).map((d) =>
                                 d.id === detail.id
                                   ? {
-                                      ...d,
-                                      description: e.target.value,
-                                    }
+                                    ...d,
+                                    description: e.target.value,
+                                  }
                                   : d,
                               ),
                             });
@@ -4311,10 +4347,10 @@ export default function PVR({
             <Button
               onClick={() => {
                 if (editingDiscountId) {
-                  const docStorageKey = `pvr_edit_doc_${editingDiscountId}`;
+                  const docStorageKey = `pv_edit_doc_${editingDiscountId}`;
                   const savedData = localStorage.getItem(docStorageKey);
                   const parsedData = savedData ? JSON.parse(savedData) : {};
-                  
+
                   // Calculate total discount (main + all additional discounts)
                   const mainDiscount = parseFloat(
                     noteValue
@@ -4334,7 +4370,7 @@ export default function PVR({
                   }, 0);
 
                   const totalDiscount = mainDiscount + additionalDiscount;
-                  
+
                   // Save discount data and detail data to localStorage
                   parsedData.discount = formatNumber(totalDiscount);
                   parsedData.noteValue = noteValue; // Store the main discount value
@@ -4355,7 +4391,7 @@ export default function PVR({
         </DialogContent>
       </Dialog>
 
-      {/* Create New PVR Dialog */}
+      {/* Create New PV Dialog */}
       <Dialog
         open={showCreateDialog}
         onOpenChange={(open) => {
@@ -4371,7 +4407,7 @@ export default function PVR({
         <DialogContent className="w-[1600px] h-[800px] flex flex-col overflow-hidden">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle className="text-purple-900">
-              Create New PVR
+              Create New PV
             </DialogTitle>
             <DialogDescription>
               Fill in the details to create a new Payment
@@ -4390,10 +4426,10 @@ export default function PVR({
                     <span className="text-red-500">*</span>
                   </div>
                   <Input
-                    value={pvrForm.supplierName}
+                    value={pvForm.supplierName}
                     onChange={(e) => {
-                      setPvrForm({
-                        ...pvrForm,
+                      setPvForm({
+                        ...pvForm,
                         supplierName: e.target.value,
                       });
                       setSupplierSearchTerm(e.target.value);
@@ -4429,7 +4465,7 @@ export default function PVR({
                                 variant="outline"
                                 className={
                                   supplier.category ===
-                                  "OVERSEAS"
+                                    "OVERSEAS"
                                     ? "border-purple-200 text-purple-700"
                                     : "border-blue-200 text-blue-700"
                                 }
@@ -4449,9 +4485,9 @@ export default function PVR({
                     Term <span className="text-red-500">*</span>
                   </div>
                   <Select
-                    value={pvrForm.term}
+                    value={pvForm.term}
                     onValueChange={(value: TermType) =>
-                      setPvrForm({ ...pvrForm, term: value })
+                      setPvForm({ ...pvForm, term: value })
                     }
                   >
                     <SelectTrigger>
@@ -4475,10 +4511,10 @@ export default function PVR({
                     <span className="text-red-500">*</span>
                   </div>
                   <Select
-                    value={pvrForm.currency}
+                    value={pvForm.currency}
                     onValueChange={(value: string) =>
-                      setPvrForm({
-                        ...pvrForm,
+                      setPvForm({
+                        ...pvForm,
                         currency: value,
                       })
                     }
@@ -4502,7 +4538,7 @@ export default function PVR({
                   </div>
                   <Input
                     type="text"
-                    value={formatNumber(pvrForm?.rate || 0)}
+                    value={formatNumber(pvForm?.rate || 0)}
                     onChange={(e) => {
                       // Don't allow typing if cursor is at the rightmost position (end of field)
                       if (
@@ -4526,8 +4562,8 @@ export default function PVR({
                         return;
                       }
 
-                      setPvrForm({
-                        ...pvrForm,
+                      setPvForm({
+                        ...pvForm,
                         rate: newRate,
                       });
 
@@ -4567,14 +4603,14 @@ export default function PVR({
                     <span className="text-red-500">*</span>
                   </div>
                   <Select
-                    value={pvrForm.pt}
+                    value={pvForm.pt}
                     onValueChange={(value: PTType) => {
-                      setPvrForm({
-                        ...pvrForm,
+                      setPvForm({
+                        ...pvForm,
                         pt: value,
-                        pvrNo: generatePVRNumber(
+                        pvNo: generatePVNumber(
                           value,
-                          pvrForm.pvrDate,
+                          pvForm.pvDate,
                         ),
                       });
                     }}
@@ -4602,10 +4638,10 @@ export default function PVR({
                   gridTemplateColumns: "10% 20% 10% 60%",
                 }}
               >
-                {/* PVR Date */}
+                {/* PV Date */}
                 <div className="space-y-2 w-full">
                   <div className="text-xs text-purple-600 mb-1">
-                    PVR Date{" "}
+                    PV Date{" "}
                     <span className="text-red-500">*</span>
                   </div>
                   <Popover
@@ -4617,7 +4653,7 @@ export default function PVR({
                         variant="outline"
                         className="w-full justify-start text-left font-normal"
                       >
-                        {pvrForm.pvrDate || "Pick a date"}
+                        {pvForm.pvDate || "Pick a date"}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent
@@ -4632,7 +4668,7 @@ export default function PVR({
                         <Input
                           type="text"
                           placeholder="DD/MM/YYYY"
-                          value={pvrForm.pvrDate || ""}
+                          value={pvForm.pvDate || ""}
                           onChange={(e) => {
                             const value = e.target.value;
                             // Allow only numbers and slashes
@@ -4668,11 +4704,11 @@ export default function PVR({
                               0,
                               10,
                             );
-                            setPvrForm({
-                              ...pvrForm,
-                              pvrDate: newDate,
-                              pvrNo: generatePVRNumber(
-                                pvrForm.pt,
+                            setPvForm({
+                              ...pvForm,
+                              pvDate: newDate,
+                              pvNo: generatePVNumber(
+                                pvForm.pt,
                                 newDate,
                               ),
                             });
@@ -4695,11 +4731,11 @@ export default function PVR({
                           const dateStr = `${year}-${month}-${day}`;
                           const formatted =
                             formatDateToDDMMYYYY(dateStr);
-                          setPvrForm({
-                            ...pvrForm,
-                            pvrDate: formatted,
-                            pvrNo: generatePVRNumber(
-                              pvrForm.pt,
+                          setPvForm({
+                            ...pvForm,
+                            pvDate: formatted,
+                            pvNo: generatePVNumber(
+                              pvForm.pt,
                               formatted,
                             ),
                           });
@@ -4716,24 +4752,24 @@ export default function PVR({
                         <CalendarComponent
                           mode="single"
                           selected={
-                            pvrForm.pvrDate
+                            pvForm.pvDate
                               ? (() => {
-                                  const parts =
-                                    pvrForm.pvrDate.split("/");
-                                  if (
-                                    parts.length === 3 &&
-                                    parts[0].length === 2 &&
-                                    parts[1].length === 2 &&
-                                    parts[2].length === 4
-                                  ) {
-                                    return new Date(
-                                      parseInt(parts[2]),
-                                      parseInt(parts[1]) - 1,
-                                      parseInt(parts[0]),
-                                    );
-                                  }
-                                  return undefined;
-                                })()
+                                const parts =
+                                  pvForm.pvDate.split("/");
+                                if (
+                                  parts.length === 3 &&
+                                  parts[0].length === 2 &&
+                                  parts[1].length === 2 &&
+                                  parts[2].length === 4
+                                ) {
+                                  return new Date(
+                                    parseInt(parts[2]),
+                                    parseInt(parts[1]) - 1,
+                                    parseInt(parts[0]),
+                                  );
+                                }
+                                return undefined;
+                              })()
                               : undefined
                           }
                           onSelect={(date: Date | undefined) => {
@@ -4748,11 +4784,11 @@ export default function PVR({
                               const dateStr = `${year}-${month}-${day}`;
                               const formatted =
                                 formatDateToDDMMYYYY(dateStr);
-                              setPvrForm({
-                                ...pvrForm,
-                                pvrDate: formatted,
-                                pvrNo: generatePVRNumber(
-                                  pvrForm.pt,
+                              setPvForm({
+                                ...pvForm,
+                                pvDate: formatted,
+                                pvNo: generatePVNumber(
+                                  pvForm.pt,
                                   formatted,
                                 ),
                               });
@@ -4772,10 +4808,10 @@ export default function PVR({
                     <span className="text-red-500">*</span>
                   </div>
                   <Select
-                    value={pvrForm.bankAccount || ""}
+                    value={pvForm.bankAccount || ""}
                     onValueChange={(value: string) =>
-                      setPvrForm({
-                        ...pvrForm,
+                      setPvForm({
+                        ...pvForm,
                         bankAccount: value,
                       })
                     }
@@ -4784,7 +4820,7 @@ export default function PVR({
                       <SelectValue placeholder="Select bank account..." />
                     </SelectTrigger>
                     <SelectContent>
-                       <SelectItem value="KAS SEMENTARA">
+                      <SelectItem value="KAS SEMENTARA">
                         KAS SEMENTARA
                       </SelectItem>
                       <SelectItem value="BCA-MJS-001">
@@ -4822,10 +4858,10 @@ export default function PVR({
                     <span className="text-red-500">*</span>
                   </div>
                   <Select
-                    value={pvrForm.paymentMethod}
+                    value={pvForm.paymentMethod}
                     onValueChange={(value: PaymentMethod) =>
-                      setPvrForm({
-                        ...pvrForm,
+                      setPvForm({
+                        ...pvForm,
                         paymentMethod: value,
                       })
                     }
@@ -4848,10 +4884,10 @@ export default function PVR({
                     Reference
                   </div>
                   <Input
-                    value={pvrForm.reference || ""}
+                    value={pvForm.reference || ""}
                     onChange={(e) =>
-                      setPvrForm({
-                        ...pvrForm,
+                      setPvForm({
+                        ...pvForm,
                         reference: e.target.value,
                       })
                     }
@@ -4868,7 +4904,7 @@ export default function PVR({
                   <Button
                     onClick={() => setShowAddLinksDialog(true)}
                     className="bg-purple-600 hover:bg-purple-700 text-white text-xs h-8 px-3 flex items-center gap-1"
-                    disabled={!pvrForm.supplierName}
+                    disabled={!pvForm.supplierName}
                   >
                     <Plus className="w-3.5 h-3.5" />
                     Add Documents
@@ -4879,7 +4915,7 @@ export default function PVR({
                   <table className="w-full table-fixed">
                     <thead className="bg-purple-50 sticky top-0 z-10">
                       <tr className="h-12">
-                             <th
+                        <th
                           className="text-purple-900 text-xs text-left px-4 py-2 font-medium border-b"
                           style={{ width: "15%" }}
                         >
@@ -4891,7 +4927,7 @@ export default function PVR({
                         >
                           Doc No
                         </th>
-                   
+
                         <th
                           className="text-purple-900 text-xs text-left px-4 py-2 font-medium border-b"
                           style={{ width: "15%" }}
@@ -4977,15 +5013,15 @@ export default function PVR({
                               }
                             };
                             const allocationDate =
-                              pvrForm.pvrDate
+                              pvForm.pvDate
                                 ? formatDateToDDMMYYYY(
-                                    convertToStorageDate(
-                                      pvrForm.pvrDate,
-                                    ),
-                                  )
+                                  convertToStorageDate(
+                                    pvForm.pvDate,
+                                  ),
+                                )
                                 : "-";
-                            const dueDate = pvrForm.pvrDate
-                              ? addDays(pvrForm.pvrDate, 30)
+                            const dueDate = pvForm.pvDate
+                              ? addDays(pvForm.pvDate, 30)
                               : "-";
 
                             return (
@@ -4993,14 +5029,14 @@ export default function PVR({
                                 key={`${pi.id}-${tableRefreshTrigger}`}
                                 className="border-b hover:bg-purple-50"
                               >
-                                  <td className="px-4 py-3 text-sm">
+                                <td className="px-4 py-3 text-sm">
                                   {getDocTypeLabel(docType)}
                                 </td>
                                 <td className="px-4 py-3 text-sm truncate">
                                   {getDocumentNumber(pi)}
                                 </td>
-                              
-                               
+
+
                                 <td className="px-4 py-3 text-sm">
                                   {formatNumber(pi.totalAmount)}
                                 </td>
@@ -5021,7 +5057,7 @@ export default function PVR({
                                           const parsed = parseFloat(
                                             e.target.value
                                               .replace(/\./g, "")
-                                              .replace(/,/g, "."  ),
+                                              .replace(/,/g, "."),
                                           );
                                           let newValue = isNaN(parsed)
                                             ? 0
@@ -5062,7 +5098,7 @@ export default function PVR({
                                         }}
                                         onKeyDown={(e) => {
                                           if (e.key === 'Enter') {
-                                            const docStorageKey = `pvr_edit_doc_${pi.id}`;
+                                            const docStorageKey = `pv_edit_doc_${pi.id}`;
                                             const savedData = localStorage.getItem(docStorageKey);
                                             const parsedData = savedData ? JSON.parse(savedData) : {};
                                             parsedData.amountPaid = [{ id: Date.now().toString(), amount: editingAmountPaidValue }];
@@ -5081,7 +5117,7 @@ export default function PVR({
                                       />
                                       <Button
                                         onClick={() => {
-                                          const docStorageKey = `pvr_edit_doc_${pi.id}`;
+                                          const docStorageKey = `pv_edit_doc_${pi.id}`;
                                           const savedData = localStorage.getItem(docStorageKey);
                                           const parsedData = savedData ? JSON.parse(savedData) : {};
                                           parsedData.amountPaid = [{ id: Date.now().toString(), amount: editingAmountPaidValue }];
@@ -5100,7 +5136,7 @@ export default function PVR({
                                   ) : (
                                     <button
                                       onClick={() => {
-                                        const docStorageKey = `pvr_edit_doc_${pi.id}`;
+                                        const docStorageKey = `pv_edit_doc_${pi.id}`;
                                         const savedData = localStorage.getItem(docStorageKey);
                                         let currentValue = formatNumber(pi.totalAmount);
                                         if (savedData) {
@@ -5109,7 +5145,7 @@ export default function PVR({
                                             if (parsed.amountPaid && Array.isArray(parsed.amountPaid) && parsed.amountPaid.length > 0) {
                                               currentValue = parsed.amountPaid[0].amount;
                                             }
-                                          } catch {}
+                                          } catch { }
                                         }
                                         setEditingAmountPaidId(pi.id);
                                         setEditingAmountPaidValue(currentValue);
@@ -5118,7 +5154,7 @@ export default function PVR({
                                       title="Click to edit"
                                     >
                                       {(() => {
-                                        const docStorageKey = `pvr_edit_doc_${pi.id}`;
+                                        const docStorageKey = `pv_edit_doc_${pi.id}`;
                                         const savedData = localStorage.getItem(docStorageKey);
                                         if (savedData) {
                                           try {
@@ -5126,7 +5162,7 @@ export default function PVR({
                                             if (parsed.amountPaid && Array.isArray(parsed.amountPaid) && parsed.amountPaid.length > 0) {
                                               return parsed.amountPaid[0].amount;
                                             }
-                                          } catch {}
+                                          } catch { }
                                         }
                                         return formatNumber(pi.totalAmount);
                                       })()}
@@ -5192,7 +5228,7 @@ export default function PVR({
                                         }}
                                         onKeyDown={(e) => {
                                           if (e.key === 'Enter') {
-                                            const docStorageKey = `pvr_edit_doc_${pi.id}`;
+                                            const docStorageKey = `pv_edit_doc_${pi.id}`;
                                             const savedData = localStorage.getItem(docStorageKey);
                                             const parsedData = savedData ? JSON.parse(savedData) : {};
                                             parsedData.discount = editingDiscountValue;
@@ -5211,7 +5247,7 @@ export default function PVR({
                                       />
                                       <Button
                                         onClick={() => {
-                                          const docStorageKey = `pvr_edit_doc_${pi.id}`;
+                                          const docStorageKey = `pv_edit_doc_${pi.id}`;
                                           const savedData = localStorage.getItem(docStorageKey);
                                           const parsedData = savedData ? JSON.parse(savedData) : {};
                                           parsedData.discount = editingDiscountValue;
@@ -5230,7 +5266,7 @@ export default function PVR({
                                   ) : (
                                     <button
                                       onClick={() => {
-                                        const docStorageKey = `pvr_edit_doc_${pi.id}`;
+                                        const docStorageKey = `pv_edit_doc_${pi.id}`;
                                         const savedData = localStorage.getItem(docStorageKey);
                                         let currentValue = '0';
                                         if (savedData) {
@@ -5239,7 +5275,7 @@ export default function PVR({
                                             if (parsed.discount) {
                                               currentValue = parsed.discount;
                                             }
-                                          } catch {}
+                                          } catch { }
                                         }
                                         setEditingDiscountId(pi.id);
                                         setEditingDiscountValue(currentValue);
@@ -5248,7 +5284,7 @@ export default function PVR({
                                       title="Click to edit"
                                     >
                                       {(() => {
-                                        const docStorageKey = `pvr_edit_doc_${pi.id}`;
+                                        const docStorageKey = `pv_edit_doc_${pi.id}`;
                                         const savedData = localStorage.getItem(docStorageKey);
                                         if (savedData) {
                                           try {
@@ -5256,7 +5292,7 @@ export default function PVR({
                                             if (parsed.discount) {
                                               return formatNumber(parseFormattedNumber(parsed.discount));
                                             }
-                                          } catch {}
+                                          } catch { }
                                         }
                                         return formatNumber(0);
                                       })()}
@@ -5264,23 +5300,23 @@ export default function PVR({
                                     </button>
                                   )}
                                 </td>
-                                {/* Outstanding CELL - CREATE NEW PVR */}
+                                {/* Outstanding CELL - CREATE NEW PV */}
                                 <td className="px-4 py-3 text-sm">
                                   {(() => {
-                                    const docStorageKey = `pvr_edit_doc_${pi.id}`;
+                                    const docStorageKey = `pv_edit_doc_${pi.id}`;
                                     const savedData = localStorage.getItem(docStorageKey);
                                     let itemTotal = pi.totalAmount;
                                     let amountPaid = itemTotal;
-                                    
+
                                     if (savedData) {
                                       try {
                                         const parsed = JSON.parse(savedData);
                                         if (parsed.amountPaid && Array.isArray(parsed.amountPaid) && parsed.amountPaid.length > 0) {
                                           amountPaid = parseFormattedNumber(parsed.amountPaid[0].amount);
                                         }
-                                      } catch {}
+                                      } catch { }
                                     }
-                                    
+
                                     const outstanding = itemTotal - amountPaid;
                                     if (outstanding > 0) {
                                       return formatNumber(outstanding);
@@ -5334,15 +5370,15 @@ export default function PVR({
                   <Label>Remarks</Label>
                   <div className="flex-1">
                     <Textarea
-                      value={pvrForm.remarks || ""}
+                      value={pvForm.remarks || ""}
                       onChange={(e) =>
-                        setPvrForm({
-                          ...pvrForm,
+                        setPvForm({
+                          ...pvForm,
                           remarks: e.target.value,
                         })
                       }
                       placeholder="Enter remarks..."
-                      className="flex-1 resize-none" style={{minHeight:'190px'}}
+                      className="flex-1 resize-none" style={{ minHeight: '190px' }}
                     />
                   </div>
                 </div>
@@ -5356,24 +5392,24 @@ export default function PVR({
                         Total Amount
                       </span>
                       <span className="text-gray-700 text-sm w-12 text-center font-bold">
-                        {pvrForm.currency}
+                        {pvForm.currency}
                       </span>
                       <span className="text-gray-700 text-sm w-4 text-right"></span>
                       <span className="text-gray-700 text-sm w-[114px] text-right font-bold">
                         {(() => {
                           let totalAmountPaid = 0;
                           linkedPIs.forEach((pi) => {
-                            const docStorageKey = `pvr_edit_doc_${pi.id}`;
+                            const docStorageKey = `pv_edit_doc_${pi.id}`;
                             const savedData = localStorage.getItem(docStorageKey);
                             let amountPaid = pi.totalAmount;
-                            
+
                             if (savedData) {
                               try {
                                 const parsed = JSON.parse(savedData);
                                 if (parsed.amountPaid && Array.isArray(parsed.amountPaid) && parsed.amountPaid.length > 0) {
                                   amountPaid = parseFormattedNumber(parsed.amountPaid[0].amount);
                                 }
-                              } catch {}
+                              } catch { }
                             }
                             totalAmountPaid += amountPaid;
                           });
@@ -5391,14 +5427,14 @@ export default function PVR({
                         Discount
                       </span>
                       <span className="text-gray-700 text-sm w-12 text-center font-bold">
-                        {pvrForm.currency}
+                        {pvForm.currency}
                       </span>
                       <span className="text-gray-700 text-sm w-4 text-right"></span>
                       <span className="text-gray-700 text-sm w-[114px] text-right font-bold">
                         {(() => {
                           let totalDiscount = 0;
                           linkedPIs.forEach((pi) => {
-                            const docStorageKey = `pvr_edit_doc_${pi.id}`;
+                            const docStorageKey = `pv_edit_doc_${pi.id}`;
                             const savedData = localStorage.getItem(docStorageKey);
                             if (savedData) {
                               try {
@@ -5406,7 +5442,7 @@ export default function PVR({
                                 if (parsed.discount) {
                                   totalDiscount += parseFormattedNumber(parsed.discount);
                                 }
-                              } catch {}
+                              } catch { }
                             }
                           });
                           return formatNumber(totalDiscount);
@@ -5415,15 +5451,15 @@ export default function PVR({
                       <span className="text-gray-700 text-sm w-4 text-left"></span>
                     </div>
 
-                   
+
 
                     {/* PPN (VAT) */}
                     <div className="flex items-center">
                       <span className="text-gray-700 text-sm flex-1 font-bold">
-                        PPN 
+                        PPN
                       </span>
                       <span className="text-gray-700 text-sm w-12 text-center font-bold">
-                        {pvrForm.currency}
+                        {pvForm.currency}
                       </span>
                       <span className="text-gray-700 text-sm w-4 text-right"></span>
                       <span className="text-gray-700 text-sm w-[114px] text-right font-bold">
@@ -5438,7 +5474,7 @@ export default function PVR({
                         PPH
                       </span>
                       <span className="text-gray-700 text-sm w-12 text-center font-bold">
-                        {pvrForm.currency}
+                        {pvForm.currency}
                       </span>
                       <span className="text-gray-700 text-sm w-4 text-right"></span>
                       <span className="text-gray-700 text-sm w-[114px] text-right font-bold">
@@ -5453,31 +5489,31 @@ export default function PVR({
                         Grand Total
                       </span>
                       <span className="text-gray-900 text-sm w-12 text-center font-bold">
-                        {pvrForm.currency}
+                        {pvForm.currency}
                       </span>
                       <span className="text-gray-900 text-sm w-4 text-right"></span>
                       <span className="text-gray-900 text-sm w-[114px] text-right font-bold">
                         {(() => {
                           let totalAmountPaid = 0;
                           linkedPIs.forEach((pi) => {
-                            const docStorageKey = `pvr_edit_doc_${pi.id}`;
+                            const docStorageKey = `pv_edit_doc_${pi.id}`;
                             const savedData = localStorage.getItem(docStorageKey);
                             let amountPaid = pi.totalAmount;
-                            
+
                             if (savedData) {
                               try {
                                 const parsed = JSON.parse(savedData);
                                 if (parsed.amountPaid && Array.isArray(parsed.amountPaid) && parsed.amountPaid.length > 0) {
                                   amountPaid = parseFormattedNumber(parsed.amountPaid[0].amount);
                                 }
-                              } catch {}
+                              } catch { }
                             }
                             totalAmountPaid += amountPaid;
                           });
-                          
+
                           let totalDiscount = 0;
                           linkedPIs.forEach((pi) => {
-                            const docStorageKey = `pvr_edit_doc_${pi.id}`;
+                            const docStorageKey = `pv_edit_doc_${pi.id}`;
                             const savedData = localStorage.getItem(docStorageKey);
                             if (savedData) {
                               try {
@@ -5485,7 +5521,7 @@ export default function PVR({
                                 if (parsed.discount) {
                                   totalDiscount += parseFormattedNumber(parsed.discount);
                                 }
-                              } catch {}
+                              } catch { }
                             }
                           });
                           // Force recalculation by including tableRefreshTrigger
@@ -5510,24 +5546,24 @@ export default function PVR({
                         {(() => {
                           let totalAmountPaid = 0;
                           linkedPIs.forEach((pi) => {
-                            const docStorageKey = `pvr_edit_doc_${pi.id}`;
+                            const docStorageKey = `pv_edit_doc_${pi.id}`;
                             const savedData = localStorage.getItem(docStorageKey);
                             let amountPaid = pi.totalAmount;
-                            
+
                             if (savedData) {
                               try {
                                 const parsed = JSON.parse(savedData);
                                 if (parsed.amountPaid && Array.isArray(parsed.amountPaid) && parsed.amountPaid.length > 0) {
                                   amountPaid = parseFormattedNumber(parsed.amountPaid[0].amount);
                                 }
-                              } catch {}
+                              } catch { }
                             }
                             totalAmountPaid += amountPaid;
                           });
-                          
+
                           let totalDiscount = 0;
                           linkedPIs.forEach((pi) => {
-                            const docStorageKey = `pvr_edit_doc_${pi.id}`;
+                            const docStorageKey = `pv_edit_doc_${pi.id}`;
                             const savedData = localStorage.getItem(docStorageKey);
                             if (savedData) {
                               try {
@@ -5535,23 +5571,23 @@ export default function PVR({
                                 if (parsed.discount) {
                                   totalDiscount += parseFormattedNumber(parsed.discount);
                                 }
-                              } catch {}
+                              } catch { }
                             }
                           });
                           // Force recalculation by including tableRefreshTrigger
                           void tableRefreshTrigger;
                           const grandTotal = totalAmountPaid - totalDiscount;
 
-                          const rate = pvrForm.rate;
+                          const rate = pvForm.rate;
                           const finalTotal =
                             rate && rate > 0
                               ? grandTotal *
-                                parseFloat(
-                                  String(rate).replace(
-                                    /,/g,
-                                    ".",
-                                  ),
-                                )
+                              parseFloat(
+                                String(rate).replace(
+                                  /,/g,
+                                  ".",
+                                ),
+                              )
                               : grandTotal;
 
                           return formatNumber(finalTotal);
@@ -5576,11 +5612,11 @@ export default function PVR({
                   Cancel
                 </Button>
                 <Button
-                  onClick={handleCreatePVR}
+                  onClick={handleCreatePV}
                   className="bg-purple-600 hover:bg-purple-700 text-sm"
-                  disabled={!pvrForm.supplierName}
+                  disabled={!pvForm.supplierName}
                 >
-                  Save PVR
+                  Save PV
                 </Button>
               </div>
             </div>
@@ -5588,7 +5624,7 @@ export default function PVR({
         </DialogContent>
       </Dialog>
 
-      {/* Edit PVR Dialog */}
+      {/* Edit PV Dialog */}
       <Dialog
         open={showEditDialog}
         onOpenChange={setShowEditDialog}
@@ -5596,10 +5632,10 @@ export default function PVR({
         <DialogContent className="w-[1600px] h-[800px] flex flex-col overflow-hidden">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle className="text-purple-900">
-              Edit PVR
+              Edit PV
             </DialogTitle>
             <DialogDescription>
-              Modify the PVR details. All changes will be
+              Modify the PV details. All changes will be
               recorded in history.
             </DialogDescription>
           </DialogHeader>
@@ -5741,10 +5777,10 @@ export default function PVR({
                     gridTemplateColumns: "10% 20% 10% 60%",
                   }}
                 >
-                  {/* PVR Date */}
+                  {/* PV Date */}
                   <div className="space-y-2 w-full">
                     <div className="text-xs text-purple-600 mb-1">
-                      PVR Date{" "}
+                      PV Date{" "}
                       <span className="text-red-500">*</span>
                     </div>
                     <Popover
@@ -5756,7 +5792,7 @@ export default function PVR({
                           variant="outline"
                           className="w-full justify-start text-left font-normal"
                         >
-                          {editFormData.pvrDate ||
+                          {editFormData.pvDate ||
                             "Pick a date"}
                         </Button>
                       </PopoverTrigger>
@@ -5772,7 +5808,7 @@ export default function PVR({
                           <Input
                             type="text"
                             placeholder="DD/MM/YYYY"
-                            value={editFormData.pvrDate || ""}
+                            value={editFormData.pvDate || ""}
                             onChange={(e) => {
                               const value = e.target.value;
                               // Allow only numbers and slashes
@@ -5806,7 +5842,7 @@ export default function PVR({
                               }
                               setEditFormData({
                                 ...editFormData,
-                                pvrDate: formatted.slice(0, 10),
+                                pvDate: formatted.slice(0, 10),
                               });
                             }}
                             className="text-sm"
@@ -5829,7 +5865,7 @@ export default function PVR({
                               formatDateToDDMMYYYY(dateStr);
                             setEditFormData({
                               ...editFormData,
-                              pvrDate: formatted,
+                              pvDate: formatted,
                             });
                             setShowEditDatePicker(false);
                           }}
@@ -5844,26 +5880,26 @@ export default function PVR({
                           <CalendarComponent
                             mode="single"
                             selected={
-                              editFormData.pvrDate
+                              editFormData.pvDate
                                 ? (() => {
-                                    const parts =
-                                      editFormData.pvrDate.split(
-                                        "/",
-                                      );
-                                    if (
-                                      parts.length === 3 &&
-                                      parts[0].length === 2 &&
-                                      parts[1].length === 2 &&
-                                      parts[2].length === 4
-                                    ) {
-                                      return new Date(
-                                        parseInt(parts[2]),
-                                        parseInt(parts[1]) - 1,
-                                        parseInt(parts[0]),
-                                      );
-                                    }
-                                    return undefined;
-                                  })()
+                                  const parts =
+                                    editFormData.pvDate.split(
+                                      "/",
+                                    );
+                                  if (
+                                    parts.length === 3 &&
+                                    parts[0].length === 2 &&
+                                    parts[1].length === 2 &&
+                                    parts[2].length === 4
+                                  ) {
+                                    return new Date(
+                                      parseInt(parts[2]),
+                                      parseInt(parts[1]) - 1,
+                                      parseInt(parts[0]),
+                                    );
+                                  }
+                                  return undefined;
+                                })()
                                 : undefined
                             }
                             onSelect={(date: Date | undefined) => {
@@ -5880,7 +5916,7 @@ export default function PVR({
                                   formatDateToDDMMYYYY(dateStr);
                                 setEditFormData({
                                   ...editFormData,
-                                  pvrDate: formatted,
+                                  pvDate: formatted,
                                 });
                                 setShowEditDatePicker(false);
                               }
@@ -6004,7 +6040,7 @@ export default function PVR({
                     <table className="w-full table-fixed">
                       <thead className="bg-purple-50 sticky top-0 z-10">
                         <tr className="h-12">
-                               <th
+                          <th
                             className="text-purple-900 text-xs text-left px-4 py-2 font-medium border-b"
                             style={{ width: "15%" }}
                           >
@@ -6016,7 +6052,7 @@ export default function PVR({
                           >
                             Doc No
                           </th>
-                     
+
                           <th
                             className="text-purple-900 text-xs text-left px-4 py-2 font-medium border-b"
                             style={{ width: "15%" }}
@@ -6101,19 +6137,19 @@ export default function PVR({
                               const docType =
                                 doc.documentType || "PI";
                               const allocationDate =
-                                selectedDetail!.pvrDate
+                                selectedDetail!.pvDate
                                   ? formatDateToDDMMYYYY(
-                                      convertToStorageDate(
-                                        selectedDetail!.pvrDate,
-                                      ),
-                                    )
+                                    convertToStorageDate(
+                                      selectedDetail!.pvDate,
+                                    ),
+                                  )
                                   : "-";
                               const dueDate = selectedDetail!
-                                .pvrDate
+                                .pvDate
                                 ? addDays(
-                                    selectedDetail!.pvrDate,
-                                    30,
-                                  )
+                                  selectedDetail!.pvDate,
+                                  30,
+                                )
                                 : "-";
 
                               return (
@@ -6121,17 +6157,15 @@ export default function PVR({
                                   key={doc.id}
                                   className="border-b hover:bg-purple-50"
                                 >
-                                     {/* DOC TYPE EDIT */}
+                                  {/* DOC TYPE EDIT */}
                                   <td className="px-4 py-3 text-sm">
-                                    {getDocumentTypeLabel(
-                                      doc.documentType || "PI",
-                                    )}
+                                    {getDocumentTypeLabel(doc)}
                                   </td>
                                   {/* DOC NO EDIT */}
                                   <td className="px-4 py-3 text-sm truncate">
                                     {getDocumentNumber(doc)}
                                   </td>
-                               
+
                                   {/* ITEM TOTAL EDIT */}
                                   <td className="px-4 py-3 text-sm">
                                     {formatNumber(
@@ -6197,7 +6231,7 @@ export default function PVR({
                                           }}
                                           onKeyDown={(e) => {
                                             if (e.key === 'Enter') {
-                                              const docStorageKey = `pvr_edit_doc_${doc.id}`;
+                                              const docStorageKey = `pv_edit_doc_${doc.id}`;
                                               const savedData = localStorage.getItem(docStorageKey);
                                               const parsedData = savedData ? JSON.parse(savedData) : {};
                                               parsedData.amountPaid = [{ id: Date.now().toString(), amount: editingAmountPaidValue }];
@@ -6216,7 +6250,7 @@ export default function PVR({
                                         />
                                         <Button
                                           onClick={() => {
-                                            const docStorageKey = `pvr_edit_doc_${doc.id}`;
+                                            const docStorageKey = `pv_edit_doc_${doc.id}`;
                                             const savedData = localStorage.getItem(docStorageKey);
                                             const parsedData = savedData ? JSON.parse(savedData) : {};
                                             parsedData.amountPaid = [{ id: Date.now().toString(), amount: editingAmountPaidValue }];
@@ -6235,7 +6269,7 @@ export default function PVR({
                                     ) : (
                                       <button
                                         onClick={() => {
-                                          const docStorageKey = `pvr_edit_doc_${doc.id}`;
+                                          const docStorageKey = `pv_edit_doc_${doc.id}`;
                                           const savedData = localStorage.getItem(docStorageKey);
                                           let currentValue = formatNumber(doc.totalAmount);
                                           if (savedData) {
@@ -6244,7 +6278,7 @@ export default function PVR({
                                               if (parsed.amountPaid && Array.isArray(parsed.amountPaid) && parsed.amountPaid.length > 0) {
                                                 currentValue = parsed.amountPaid[0].amount;
                                               }
-                                            } catch {}
+                                            } catch { }
                                           }
                                           setEditingAmountPaidId(doc.id);
                                           setEditingAmountPaidValue(currentValue);
@@ -6253,7 +6287,7 @@ export default function PVR({
                                         title="Click to edit"
                                       >
                                         {(() => {
-                                          const docStorageKey = `pvr_edit_doc_${doc.id}`;
+                                          const docStorageKey = `pv_edit_doc_${doc.id}`;
                                           const savedData = localStorage.getItem(docStorageKey);
                                           if (savedData) {
                                             try {
@@ -6261,7 +6295,7 @@ export default function PVR({
                                               if (parsed.amountPaid && Array.isArray(parsed.amountPaid) && parsed.amountPaid.length > 0) {
                                                 return parsed.amountPaid[0].amount;
                                               }
-                                            } catch {}
+                                            } catch { }
                                           }
                                           return formatNumber(doc.totalAmount);
                                         })()}
@@ -6328,7 +6362,7 @@ export default function PVR({
                                           }}
                                           onKeyDown={(e) => {
                                             if (e.key === 'Enter') {
-                                              const docStorageKey = `pvr_edit_doc_${doc.id}`;
+                                              const docStorageKey = `pv_edit_doc_${doc.id}`;
                                               const savedData = localStorage.getItem(docStorageKey);
                                               const parsedData = savedData ? JSON.parse(savedData) : {};
                                               parsedData.discount = editingDiscountValue;
@@ -6347,7 +6381,7 @@ export default function PVR({
                                         />
                                         <Button
                                           onClick={() => {
-                                            const docStorageKey = `pvr_edit_doc_${doc.id}`;
+                                            const docStorageKey = `pv_edit_doc_${doc.id}`;
                                             const savedData = localStorage.getItem(docStorageKey);
                                             const parsedData = savedData ? JSON.parse(savedData) : {};
                                             parsedData.discount = editingDiscountValue;
@@ -6366,7 +6400,7 @@ export default function PVR({
                                     ) : (
                                       <button
                                         onClick={() => {
-                                          const docStorageKey = `pvr_edit_doc_${doc.id}`;
+                                          const docStorageKey = `pv_edit_doc_${doc.id}`;
                                           const savedData = localStorage.getItem(docStorageKey);
                                           let currentValue = '0';
                                           if (savedData) {
@@ -6375,7 +6409,7 @@ export default function PVR({
                                               if (parsed.discount) {
                                                 currentValue = parsed.discount;
                                               }
-                                            } catch {}
+                                            } catch { }
                                           }
                                           setEditingDiscountId(doc.id);
                                           setEditingDiscountValue(currentValue);
@@ -6386,7 +6420,7 @@ export default function PVR({
                                         {(() => {
                                           // Depend on tableRefreshTrigger to force re-render when discount is saved
                                           void tableRefreshTrigger;
-                                          const docStorageKey = `pvr_edit_doc_${doc.id}`;
+                                          const docStorageKey = `pv_edit_doc_${doc.id}`;
                                           const savedData = localStorage.getItem(docStorageKey);
                                           if (savedData) {
                                             try {
@@ -6394,7 +6428,7 @@ export default function PVR({
                                               if (parsed.discount) {
                                                 return formatNumber(parseFormattedNumber(parsed.discount));
                                               }
-                                            } catch {}
+                                            } catch { }
                                           }
                                           return formatNumber(0);
                                         })()}
@@ -6402,23 +6436,23 @@ export default function PVR({
                                       </button>
                                     )}
                                   </td>
-                                  {/* Outstanding CELL - EDIT EXISTING PVR */}
+                                  {/* Outstanding CELL - EDIT EXISTING PV */}
                                   <td className="px-4 py-3 text-sm">
                                     {(() => {
-                                      const docStorageKey = `pvr_edit_doc_${doc.id}`;
+                                      const docStorageKey = `pv_edit_doc_${doc.id}`;
                                       const savedData = localStorage.getItem(docStorageKey);
                                       let itemTotal = doc.totalAmount;
                                       let amountPaid = itemTotal;
-                                      
+
                                       if (savedData) {
                                         try {
                                           const parsed = JSON.parse(savedData);
                                           if (parsed.amountPaid && Array.isArray(parsed.amountPaid) && parsed.amountPaid.length > 0) {
                                             amountPaid = parseFormattedNumber(parsed.amountPaid[0].amount);
                                           }
-                                        } catch {}
+                                        } catch { }
                                       }
-                                      
+
                                       const outstanding = itemTotal - amountPaid;
                                       if (outstanding > 0) {
                                         return formatNumber(outstanding);
@@ -6505,19 +6539,19 @@ export default function PVR({
                         );
                         const totalAmount = filteredDocs.reduce((sum, doc) => {
                           // Check localStorage for newest edited Amount Paid
-                          const docStorageKey = `pvr_edit_doc_${doc.id}`;
+                          const docStorageKey = `pv_edit_doc_${doc.id}`;
                           const savedData = localStorage.getItem(docStorageKey);
                           let amountPaid = doc.totalAmount;
-                          
+
                           if (savedData) {
                             try {
                               const parsed = JSON.parse(savedData);
                               if (parsed.amountPaid && Array.isArray(parsed.amountPaid) && parsed.amountPaid.length > 0) {
                                 amountPaid = parseFormattedNumber(parsed.amountPaid[0].amount);
                               }
-                            } catch {}
+                            } catch { }
                           }
-                          
+
                           return sum + amountPaid;
                         }, 0);
 
@@ -6550,7 +6584,7 @@ export default function PVR({
                                 {(() => {
                                   let totalDiscount = 0;
                                   filteredDocs.forEach((doc) => {
-                                    const docStorageKey = `pvr_edit_doc_${doc.id}`;
+                                    const docStorageKey = `pv_edit_doc_${doc.id}`;
                                     // Include currently edited discount if user is editing this doc
                                     if (editingDiscountId === doc.id && editingDiscountValue) {
                                       totalDiscount += parseFormattedNumber(editingDiscountValue);
@@ -6562,7 +6596,7 @@ export default function PVR({
                                           if (parsed.discount) {
                                             totalDiscount += parseFormattedNumber(parsed.discount);
                                           }
-                                        } catch {}
+                                        } catch { }
                                       }
                                     }
                                   });
@@ -6571,7 +6605,7 @@ export default function PVR({
                               </span>
                               <span className="text-gray-700 text-sm w-4 text-left"></span>
                             </div>
-                      
+
                             {/* PPN (VAT) */}
                             <div className="flex items-center">
                               <span className="text-gray-700 text-sm flex-1 font-bold">
@@ -6613,7 +6647,7 @@ export default function PVR({
                                 {(() => {
                                   let totalDiscount = 0;
                                   filteredDocs.forEach((doc) => {
-                                    const docStorageKey = `pvr_edit_doc_${doc.id}`;
+                                    const docStorageKey = `pv_edit_doc_${doc.id}`;
                                     // Include currently edited discount if user is editing this doc
                                     if (editingDiscountId === doc.id && editingDiscountValue) {
                                       totalDiscount += parseFormattedNumber(editingDiscountValue);
@@ -6625,7 +6659,7 @@ export default function PVR({
                                           if (parsed.discount) {
                                             totalDiscount += parseFormattedNumber(parsed.discount);
                                           }
-                                        } catch {}
+                                        } catch { }
                                       }
                                     }
                                   });
@@ -6648,7 +6682,7 @@ export default function PVR({
                                 {(() => {
                                   let totalDiscount = 0;
                                   filteredDocs.forEach((doc) => {
-                                    const docStorageKey = `pvr_edit_doc_${doc.id}`;
+                                    const docStorageKey = `pv_edit_doc_${doc.id}`;
                                     // Include currently edited discount if user is editing this doc
                                     if (editingDiscountId === doc.id && editingDiscountValue) {
                                       totalDiscount += parseFormattedNumber(editingDiscountValue);
@@ -6660,7 +6694,7 @@ export default function PVR({
                                           if (parsed.discount) {
                                             totalDiscount += parseFormattedNumber(parsed.discount);
                                           }
-                                        } catch {}
+                                        } catch { }
                                       }
                                     }
                                   });
@@ -6669,12 +6703,12 @@ export default function PVR({
                                   const finalTotal =
                                     rate && rate > 0
                                       ? grandTotal *
-                                        parseFloat(
-                                          String(rate).replace(
-                                            /,/g,
-                                            ".",
-                                          ),
-                                        )
+                                      parseFloat(
+                                        String(rate).replace(
+                                          /,/g,
+                                          ".",
+                                        ),
+                                      )
                                       : grandTotal;
                                   return formatNumber(finalTotal);
                                 })()}
@@ -6697,7 +6731,7 @@ export default function PVR({
                       setShowDetailDialog(true);
                       setEditFormData(null);
                       setEditLinkedPIs([]);
-                      setEditPvrItems([]);
+                      setEditPvItems([]);
                     }}
                     className="border-purple-300 text-purple-700 hover:bg-purple-50"
                   >
@@ -6716,7 +6750,7 @@ export default function PVR({
         </DialogContent>
       </Dialog>
 
-      {/* Create New PV Dialog */}
+      {/* Approve PV Dialog */}
       <Dialog
         open={showCreatePVDialog}
         onOpenChange={(open: boolean) => {
@@ -6728,16 +6762,14 @@ export default function PVR({
             setSupplierSearchTerm("");
           }
         }}
-      >
+      >2
         <DialogContent className="w-[1600px] h-[800px] flex flex-col overflow-hidden">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle className="text-purple-900">
-              Create New PV
+              Approve Payment Voucher
             </DialogTitle>
-            <DialogDescription>
-              Fill in the details to create a new Payment
-              Voucher
-            </DialogDescription>
+
+
           </DialogHeader>
           <div className="flex flex-col h-full">
             {/* Scrollable Content */}
@@ -6751,10 +6783,11 @@ export default function PVR({
                     <span className="text-red-500">*</span>
                   </div>
                   <Input
-                    value={pvrForm.supplierName}
+                    value={pvForm.supplierName}
+                    disabled
                     onChange={(e) => {
-                      setPvrForm({
-                        ...pvrForm,
+                      setPvForm({
+                        ...pvForm,
                         supplierName: e.target.value,
                       });
                       setSupplierSearchTerm(e.target.value);
@@ -6791,7 +6824,7 @@ export default function PVR({
                                   variant="outline"
                                   className={
                                     (supplier.category || supplier.supplierCategory) ===
-                                    "OVERSEAS"
+                                      "OVERSEAS"
                                       ? "border-purple-200 text-purple-700"
                                       : "border-blue-200 text-blue-700"
                                   }
@@ -6812,9 +6845,10 @@ export default function PVR({
                     Term <span className="text-red-500">*</span>
                   </div>
                   <Select
-                    value={pvrForm.term}
+                    value={pvForm.term}
+                    disabled
                     onValueChange={(value: any) =>
-                      setPvrForm({ ...pvrForm, term: value })
+                      setPvForm({ ...pvForm, term: value })
                     }
                   >
                     <SelectTrigger>
@@ -6838,10 +6872,11 @@ export default function PVR({
                     <span className="text-red-500">*</span>
                   </div>
                   <Select
-                    value={pvrForm.currency}
+                    value={pvForm.currency}
+                    disabled
                     onValueChange={(value: string) =>
-                      setPvrForm({
-                        ...pvrForm,
+                      setPvForm({
+                        ...pvForm,
                         currency: value,
                       })
                     }
@@ -6865,7 +6900,8 @@ export default function PVR({
                   </div>
                   <Input
                     type="text"
-                    value={formatNumber(pvrForm?.rate || 0)}
+                    disabled
+                    value={formatNumber(pvForm?.rate || 0)}
                     onChange={(e) => {
                       // Don't allow typing if cursor is at the rightmost position (end of field)
                       if (
@@ -6889,8 +6925,8 @@ export default function PVR({
                         return;
                       }
 
-                      setPvrForm({
-                        ...pvrForm,
+                      setPvForm({
+                        ...pvForm,
                         rate: newRate,
                       });
 
@@ -6930,14 +6966,15 @@ export default function PVR({
                     <span className="text-red-500">*</span>
                   </div>
                   <Select
-                    value={pvrForm.pt}
+                    value={pvForm.pt}
+                    disabled
                     onValueChange={(value: any) => {
-                      setPvrForm({
-                        ...pvrForm,
+                      setPvForm({
+                        ...pvForm,
                         pt: value,
-                        pvrNo: generatePVRNumber(
+                        pvNo: generatePVNumber(
                           value,
-                          pvrForm.pvrDate,
+                          pvForm.pvDate,
                         ),
                       });
                     }}
@@ -6978,9 +7015,10 @@ export default function PVR({
                     <PopoverTrigger asChild>
                       <Button
                         variant="outline"
+                        disabled
                         className="w-full justify-start text-left font-normal"
                       >
-                        {pvrForm.pvrDate || "Pick a date"}
+                        {pvForm.pvDate || "Pick a date"}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent
@@ -6995,7 +7033,7 @@ export default function PVR({
                         <Input
                           type="text"
                           placeholder="DD/MM/YYYY"
-                          value={pvrForm.pvrDate || ""}
+                          value={pvForm.pvDate || ""}
                           onChange={(e) => {
                             const value = e.target.value;
                             // Allow only numbers and slashes
@@ -7031,11 +7069,11 @@ export default function PVR({
                               0,
                               10,
                             );
-                            setPvrForm({
-                              ...pvrForm,
-                              pvrDate: newDate,
-                              pvrNo: generatePVRNumber(
-                                pvrForm.pt,
+                            setPvForm({
+                              ...pvForm,
+                              pvDate: newDate,
+                              pvNo: generatePVNumber(
+                                pvForm.pt,
                                 newDate,
                               ),
                             });
@@ -7058,11 +7096,11 @@ export default function PVR({
                           const dateStr = `${year}-${month}-${day}`;
                           const formatted =
                             formatDateToDDMMYYYY(dateStr);
-                          setPvrForm({
-                            ...pvrForm,
-                            pvrDate: formatted,
-                            pvrNo: generatePVRNumber(
-                              pvrForm.pt,
+                          setPvForm({
+                            ...pvForm,
+                            pvDate: formatted,
+                            pvNo: generatePVNumber(
+                              pvForm.pt,
                               formatted,
                             ),
                           });
@@ -7079,24 +7117,24 @@ export default function PVR({
                         <CalendarComponent
                           mode="single"
                           selected={
-                            pvrForm.pvrDate
+                            pvForm.pvDate
                               ? (() => {
-                                  const parts =
-                                    pvrForm.pvrDate.split("/");
-                                  if (
-                                    parts.length === 3 &&
-                                    parts[0].length === 2 &&
-                                    parts[1].length === 2 &&
-                                    parts[2].length === 4
-                                  ) {
-                                    return new Date(
-                                      parseInt(parts[2]),
-                                      parseInt(parts[1]) - 1,
-                                      parseInt(parts[0]),
-                                    );
-                                  }
-                                  return undefined;
-                                })()
+                                const parts =
+                                  pvForm.pvDate.split("/");
+                                if (
+                                  parts.length === 3 &&
+                                  parts[0].length === 2 &&
+                                  parts[1].length === 2 &&
+                                  parts[2].length === 4
+                                ) {
+                                  return new Date(
+                                    parseInt(parts[2]),
+                                    parseInt(parts[1]) - 1,
+                                    parseInt(parts[0]),
+                                  );
+                                }
+                                return undefined;
+                              })()
                               : undefined
                           }
                           onSelect={(date: Date | undefined) => {
@@ -7111,11 +7149,11 @@ export default function PVR({
                               const dateStr = `${year}-${month}-${day}`;
                               const formatted =
                                 formatDateToDDMMYYYY(dateStr);
-                              setPvrForm({
-                                ...pvrForm,
-                                pvrDate: formatted,
-                                pvrNo: generatePVRNumber(
-                                  pvrForm.pt,
+                              setPvForm({
+                                ...pvForm,
+                                pvDate: formatted,
+                                pvNo: generatePVNumber(
+                                  pvForm.pt,
                                   formatted,
                                 ),
                               });
@@ -7135,10 +7173,11 @@ export default function PVR({
                     <span className="text-red-500">*</span>
                   </div>
                   <Select
-                    value={pvrForm.bankAccount || ""}
+                    value={pvForm.bankAccount || ""}
+
                     onValueChange={(value: string) =>
-                      setPvrForm({
-                        ...pvrForm,
+                      setPvForm({
+                        ...pvForm,
                         bankAccount: value,
                       })
                     }
@@ -7147,7 +7186,7 @@ export default function PVR({
                       <SelectValue placeholder="Select bank account..." />
                     </SelectTrigger>
                     <SelectContent>
-                       <SelectItem value="KAS SEMENTARA">
+                      <SelectItem value="KAS SEMENTARA">
                         KAS SEMENTARA
                       </SelectItem>
                       <SelectItem value="BCA-MJS-001">
@@ -7185,10 +7224,11 @@ export default function PVR({
                     <span className="text-red-500">*</span>
                   </div>
                   <Select
-                    value={pvrForm.paymentMethod}
+                    value={pvForm.paymentMethod}
+                    disabled
                     onValueChange={(value: any) =>
-                      setPvrForm({
-                        ...pvrForm,
+                      setPvForm({
+                        ...pvForm,
                         paymentMethod: value,
                       })
                     }
@@ -7211,10 +7251,11 @@ export default function PVR({
                     Reference
                   </div>
                   <Input
-                    value={pvrForm.reference || ""}
+                    value={pvForm.reference || ""}
+                    disabled
                     onChange={(e) =>
-                      setPvrForm({
-                        ...pvrForm,
+                      setPvForm({
+                        ...pvForm,
                         reference: e.target.value,
                       })
                     }
@@ -7231,10 +7272,10 @@ export default function PVR({
                   <Button
                     onClick={() => setShowAddLinksDialog(true)}
                     className="bg-purple-600 hover:bg-purple-700 text-white text-xs h-8 px-3 flex items-center gap-1"
-                    disabled={!pvrForm.supplierName}
+                    disabled
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    Add PVR
+                    Add PV
 
                   </Button>
                 </div>
@@ -7242,12 +7283,6 @@ export default function PVR({
                   <table className="w-full">
                     <thead className="bg-purple-50 sticky top-0 z-10">
                       <tr className="h-12">
-                         <th
-                          className="text-purple-900 text-xs text-left px-4 py-2 font-medium border-b"
-                          style={{ width: "25%", minWidth: "220px" }}
-                        >
-                          PVR No
-                        </th>
                         <th
                           className="text-purple-900 text-xs text-left px-4 py-2 font-medium border-b"
                           style={{ width: "15%", minWidth: "150px" }}
@@ -7260,7 +7295,7 @@ export default function PVR({
                         >
                           Doc No
                         </th>
-                   
+
                         <th
                           className="text-purple-900 text-xs text-left px-4 py-2 font-medium border-b"
                           style={{ width: "9%", minWidth: "120px" }}
@@ -7308,8 +7343,10 @@ export default function PVR({
                           );
                         };
 
-                        return linkedPIs.length > 0 ? (
-                          linkedPIs.map((pi) => {
+                        const displayList = linkedPIs.filter(pi => pi.documentType !== "PO");
+
+                        return displayList.length > 0 ? (
+                          displayList.map((pi) => {
                             const docType =
                               pi.documentType || "PI";
                             const getDocTypeLabel = (
@@ -7334,21 +7371,53 @@ export default function PVR({
                                 key={`${pi.id}-${tableRefreshTrigger}`}
                                 className="border-b hover:bg-purple-50"
                               >
-                                <td className="px-4 py-3 text-sm">
-                                  {pi.pvrNo || "-"}
-                                </td>
+                                
                                 <td className="px-4 py-3 text-sm">
                                   {getDocTypeLabel(docType)}
                                 </td>
                                 <td className="px-4 py-3 text-sm">
                                   {getDocumentNumber(pi)}
                                 </td>
-                              
-                               
+
+
                                 <td className="px-4 py-3 text-sm">
                                   {formatNumber(pi.totalAmount)}
                                 </td>
+
+                                {/* Amount Paid - Now non-clickable */}
                                 <td className="px-4 py-3 text-sm">
+                                  {(() => {
+                                    const docStorageKey = `pv_edit_doc_${pi.id}`;
+                                    const savedData = localStorage.getItem(docStorageKey);
+                                    if (savedData) {
+                                      try {
+                                        const parsed = JSON.parse(savedData);
+                                        if (parsed.amountPaid && Array.isArray(parsed.amountPaid) && parsed.amountPaid.length > 0) {
+                                          return parsed.amountPaid[0].amount;
+                                        }
+                                      } catch { }
+                                    }
+                                    return formatNumber(pi.totalAmount);
+                                  })()}
+                                </td>
+
+                                {/* Discount - Now non-clickable */}
+                                <td className="px-4 py-3 text-sm">
+                                  {(() => {
+                                    const docStorageKey = `pv_edit_doc_${pi.id}`;
+                                    const savedData = localStorage.getItem(docStorageKey);
+                                    if (savedData) {
+                                      try {
+                                        const parsed = JSON.parse(savedData);
+                                        if (parsed.discount) {
+                                          return formatNumber(parseFormattedNumber(parsed.discount));
+                                        }
+                                      } catch { }
+                                    }
+                                    return formatNumber(0);
+                                  })()}
+                                </td>
+                                {/* <td className="px-4 py-3 text-sm">
                                   {editingAmountPaidId === pi.id ? (
                                     <div className="flex gap-1 items-center min-w-0">
                                       <input
@@ -7406,7 +7475,7 @@ export default function PVR({
                                         }}
                                         onKeyDown={(e) => {
                                           if (e.key === 'Enter') {
-                                            const docStorageKey = `pvr_edit_doc_${pi.id}`;
+                                            const docStorageKey = `pv_edit_doc_${pi.id}`;
                                             const savedData = localStorage.getItem(docStorageKey);
                                             const parsedData = savedData ? JSON.parse(savedData) : {};
                                             parsedData.amountPaid = [{ id: Date.now().toString(), amount: editingAmountPaidValue }];
@@ -7425,7 +7494,7 @@ export default function PVR({
                                       />
                                       <Button
                                         onClick={() => {
-                                          const docStorageKey = `pvr_edit_doc_${pi.id}`;
+                                          const docStorageKey = `pv_edit_doc_${pi.id}`;
                                           const savedData = localStorage.getItem(docStorageKey);
                                           const parsedData = savedData ? JSON.parse(savedData) : {};
                                           parsedData.amountPaid = [{ id: Date.now().toString(), amount: editingAmountPaidValue }];
@@ -7444,7 +7513,7 @@ export default function PVR({
                                   ) : (
                                     <button
                                       onClick={() => {
-                                        const docStorageKey = `pvr_edit_doc_${pi.id}`;
+                                        const docStorageKey = `pv_edit_doc_${pi.id}`;
                                         const savedData = localStorage.getItem(docStorageKey);
                                         let currentValue = formatNumber(pi.totalAmount);
                                         if (savedData) {
@@ -7462,7 +7531,7 @@ export default function PVR({
                                       title="Click to edit"
                                     >
                                       {(() => {
-                                        const docStorageKey = `pvr_edit_doc_${pi.id}`;
+                                        const docStorageKey = `pv_edit_doc_${pi.id}`;
                                         const savedData = localStorage.getItem(docStorageKey);
                                         if (savedData) {
                                           try {
@@ -7477,8 +7546,8 @@ export default function PVR({
                                       <Edit className="w-3 h-3 flex-shrink-0" />
                                     </button>
                                   )}
-                                </td>
-                                <td className="px-4 py-3 text-sm">
+                                </td> */}
+                                {/* <td className="px-4 py-3 text-sm">
                                   {editingDiscountId === pi.id ? (
                                     <div className="flex gap-1 items-center min-w-0">
                                       <input
@@ -7536,7 +7605,7 @@ export default function PVR({
                                         }}
                                         onKeyDown={(e) => {
                                           if (e.key === 'Enter') {
-                                            const docStorageKey = `pvr_edit_doc_${pi.id}`;
+                                            const docStorageKey = `pv_edit_doc_${pi.id}`;
                                             const savedData = localStorage.getItem(docStorageKey);
                                             const parsedData = savedData ? JSON.parse(savedData) : {};
                                             parsedData.discount = editingDiscountValue;
@@ -7555,7 +7624,7 @@ export default function PVR({
                                       />
                                       <Button
                                         onClick={() => {
-                                          const docStorageKey = `pvr_edit_doc_${pi.id}`;
+                                          const docStorageKey = `pv_edit_doc_${pi.id}`;
                                           const savedData = localStorage.getItem(docStorageKey);
                                           const parsedData = savedData ? JSON.parse(savedData) : {};
                                           parsedData.discount = editingDiscountValue;
@@ -7574,7 +7643,7 @@ export default function PVR({
                                   ) : (
                                     <button
                                       onClick={() => {
-                                        const docStorageKey = `pvr_edit_doc_${pi.id}`;
+                                        const docStorageKey = `pv_edit_doc_${pi.id}`;
                                         const savedData = localStorage.getItem(docStorageKey);
                                         let currentValue = '0';
                                         if (savedData) {
@@ -7592,7 +7661,7 @@ export default function PVR({
                                       title="Click to edit"
                                     >
                                       {(() => {
-                                        const docStorageKey = `pvr_edit_doc_${pi.id}`;
+                                        const docStorageKey = `pv_edit_doc_${pi.id}`;
                                         const savedData = localStorage.getItem(docStorageKey);
                                         if (savedData) {
                                           try {
@@ -7607,24 +7676,24 @@ export default function PVR({
                                       <Edit className="w-3 h-3 flex-shrink-0" />
                                     </button>
                                   )}
-                                </td>
+                                </td> */}
                                 {/* Outstanding CELL - CREATE NEW PV */}
                                 <td className="px-4 py-3 text-sm">
                                   {(() => {
-                                    const docStorageKey = `pvr_edit_doc_${pi.id}`;
+                                    const docStorageKey = `pv_edit_doc_${pi.id}`;
                                     const savedData = localStorage.getItem(docStorageKey);
                                     let itemTotal = pi.totalAmount;
                                     let amountPaid = itemTotal;
-                                    
+
                                     if (savedData) {
                                       try {
                                         const parsed = JSON.parse(savedData);
                                         if (parsed.amountPaid && Array.isArray(parsed.amountPaid) && parsed.amountPaid.length > 0) {
                                           amountPaid = parseFormattedNumber(parsed.amountPaid[0].amount);
                                         }
-                                      } catch {}
+                                      } catch { }
                                     }
-                                    
+
                                     const outstanding = itemTotal - amountPaid;
                                     if (outstanding > 0) {
                                       return formatNumber(outstanding);
@@ -7634,7 +7703,8 @@ export default function PVR({
                                   })()}
                                 </td>
                                 <td className="px-4 py-3 text-center">
-                                  <button
+                                  {/* <button
+                                  disabled
                                     onClick={() => {
                                       setLinkedPIs(
                                         linkedPIs.filter(
@@ -7647,9 +7717,9 @@ export default function PVR({
                                     title="Delete"
                                   >
                                     <Trash2 className="w-4 h-4" />
-                                  </button>
+                                  </button> */}
                                 </td>
-                             </tr>
+                              </tr>
                             );
                           })
                         ) : (
@@ -7678,15 +7748,15 @@ export default function PVR({
                   <Label>Remarks</Label>
                   <div className="flex-1">
                     <Textarea
-                      value={pvrForm.remarks || ""}
+                      value={pvForm.remarks || ""}
                       onChange={(e) =>
-                        setPvrForm({
-                          ...pvrForm,
+                        setPvForm({
+                          ...pvForm,
                           remarks: e.target.value,
                         })
                       }
                       placeholder="Enter remarks..."
-                      className="flex-1 resize-none" style={{minHeight:'190px'}}
+                      className="flex-1 resize-none" style={{ minHeight: '190px' }}
                     />
                   </div>
                 </div>
@@ -7700,24 +7770,24 @@ export default function PVR({
                         Total Amount
                       </span>
                       <span className="text-gray-700 text-sm w-12 text-center font-bold">
-                        {pvrForm.currency}
+                        {pvForm.currency}
                       </span>
                       <span className="text-gray-700 text-sm w-4 text-right"></span>
                       <span className="text-gray-700 text-sm w-[114px] text-right font-bold">
                         {(() => {
                           let totalAmountPaid = 0;
                           linkedPIs.forEach((pi) => {
-                            const docStorageKey = `pvr_edit_doc_${pi.id}`;
+                            const docStorageKey = `pv_edit_doc_${pi.id}`;
                             const savedData = localStorage.getItem(docStorageKey);
                             let amountPaid = pi.totalAmount;
-                            
+
                             if (savedData) {
                               try {
                                 const parsed = JSON.parse(savedData);
                                 if (parsed.amountPaid && Array.isArray(parsed.amountPaid) && parsed.amountPaid.length > 0) {
                                   amountPaid = parseFormattedNumber(parsed.amountPaid[0].amount);
                                 }
-                              } catch {}
+                              } catch { }
                             }
                             totalAmountPaid += amountPaid;
                           });
@@ -7735,14 +7805,14 @@ export default function PVR({
                         Discount
                       </span>
                       <span className="text-gray-700 text-sm w-12 text-center font-bold">
-                        {pvrForm.currency}
+                        {pvForm.currency}
                       </span>
                       <span className="text-gray-700 text-sm w-4 text-right"></span>
                       <span className="text-gray-700 text-sm w-[114px] text-right font-bold">
                         {(() => {
                           let totalDiscount = 0;
                           linkedPIs.forEach((pi) => {
-                            const docStorageKey = `pvr_edit_doc_${pi.id}`;
+                            const docStorageKey = `pv_edit_doc_${pi.id}`;
                             const savedData = localStorage.getItem(docStorageKey);
                             if (savedData) {
                               try {
@@ -7750,7 +7820,7 @@ export default function PVR({
                                 if (parsed.discount) {
                                   totalDiscount += parseFormattedNumber(parsed.discount);
                                 }
-                              } catch {}
+                              } catch { }
                             }
                           });
                           return formatNumber(totalDiscount);
@@ -7759,15 +7829,15 @@ export default function PVR({
                       <span className="text-gray-700 text-sm w-4 text-left"></span>
                     </div>
 
-                   
+
 
                     {/* PPN (VAT) */}
                     <div className="flex items-center">
                       <span className="text-gray-700 text-sm flex-1 font-bold">
-                        PPN 
+                        PPN
                       </span>
                       <span className="text-gray-700 text-sm w-12 text-center font-bold">
-                        {pvrForm.currency}
+                        {pvForm.currency}
                       </span>
                       <span className="text-gray-700 text-sm w-4 text-right"></span>
                       <span className="text-gray-700 text-sm w-[114px] text-right font-bold">
@@ -7782,7 +7852,7 @@ export default function PVR({
                         PPH
                       </span>
                       <span className="text-gray-700 text-sm w-12 text-center font-bold">
-                        {pvrForm.currency}
+                        {pvForm.currency}
                       </span>
                       <span className="text-gray-700 text-sm w-4 text-right"></span>
                       <span className="text-gray-700 text-sm w-[114px] text-right font-bold">
@@ -7797,31 +7867,31 @@ export default function PVR({
                         Grand Total
                       </span>
                       <span className="text-gray-900 text-sm w-12 text-center font-bold">
-                        {pvrForm.currency}
+                        {pvForm.currency}
                       </span>
                       <span className="text-gray-900 text-sm w-4 text-right"></span>
                       <span className="text-gray-900 text-sm w-[114px] text-right font-bold">
                         {(() => {
                           let totalAmountPaid = 0;
                           linkedPIs.forEach((pi) => {
-                            const docStorageKey = `pvr_edit_doc_${pi.id}`;
+                            const docStorageKey = `pv_edit_doc_${pi.id}`;
                             const savedData = localStorage.getItem(docStorageKey);
                             let amountPaid = pi.totalAmount;
-                            
+
                             if (savedData) {
                               try {
                                 const parsed = JSON.parse(savedData);
                                 if (parsed.amountPaid && Array.isArray(parsed.amountPaid) && parsed.amountPaid.length > 0) {
                                   amountPaid = parseFormattedNumber(parsed.amountPaid[0].amount);
                                 }
-                              } catch {}
+                              } catch { }
                             }
                             totalAmountPaid += amountPaid;
                           });
-                          
+
                           let totalDiscount = 0;
                           linkedPIs.forEach((pi) => {
-                            const docStorageKey = `pvr_edit_doc_${pi.id}`;
+                            const docStorageKey = `pv_edit_doc_${pi.id}`;
                             const savedData = localStorage.getItem(docStorageKey);
                             if (savedData) {
                               try {
@@ -7829,7 +7899,7 @@ export default function PVR({
                                 if (parsed.discount) {
                                   totalDiscount += parseFormattedNumber(parsed.discount);
                                 }
-                              } catch {}
+                              } catch { }
                             }
                           });
                           // Force recalculation by including tableRefreshTrigger
@@ -7854,24 +7924,24 @@ export default function PVR({
                         {(() => {
                           let totalAmountPaid = 0;
                           linkedPIs.forEach((pi) => {
-                            const docStorageKey = `pvr_edit_doc_${pi.id}`;
+                            const docStorageKey = `pv_edit_doc_${pi.id}`;
                             const savedData = localStorage.getItem(docStorageKey);
                             let amountPaid = pi.totalAmount;
-                            
+
                             if (savedData) {
                               try {
                                 const parsed = JSON.parse(savedData);
                                 if (parsed.amountPaid && Array.isArray(parsed.amountPaid) && parsed.amountPaid.length > 0) {
                                   amountPaid = parseFormattedNumber(parsed.amountPaid[0].amount);
                                 }
-                              } catch {}
+                              } catch { }
                             }
                             totalAmountPaid += amountPaid;
                           });
-                          
+
                           let totalDiscount = 0;
                           linkedPIs.forEach((pi) => {
-                            const docStorageKey = `pvr_edit_doc_${pi.id}`;
+                            const docStorageKey = `pv_edit_doc_${pi.id}`;
                             const savedData = localStorage.getItem(docStorageKey);
                             if (savedData) {
                               try {
@@ -7879,23 +7949,23 @@ export default function PVR({
                                 if (parsed.discount) {
                                   totalDiscount += parseFormattedNumber(parsed.discount);
                                 }
-                              } catch {}
+                              } catch { }
                             }
                           });
                           // Force recalculation by including tableRefreshTrigger
                           void tableRefreshTrigger;
                           const grandTotal = totalAmountPaid - totalDiscount;
 
-                          const rate = pvrForm.rate;
+                          const rate = pvForm.rate;
                           const finalTotal =
                             rate && rate > 0
                               ? grandTotal *
-                                parseFloat(
-                                  String(rate).replace(
-                                    /,/g,
-                                    ".",
-                                  ),
-                                )
+                              parseFloat(
+                                String(rate).replace(
+                                  /,/g,
+                                  ".",
+                                ),
+                              )
                               : grandTotal;
 
                           return formatNumber(finalTotal);
@@ -7909,6 +7979,13 @@ export default function PVR({
 
               {/* Action Buttons */}
               <div className="border-t border-gray-200 pt-3 flex gap-2 justify-end">
+                <div className="justify-start flex-1">
+                  {/* Developer Note*/}
+                  <p className="mt-2 text-xs text-red-500 italic">
+                    Note for User : Kasir hanya bisa edit Bank Account | Fitur lengkap - Bank Account autofill sesuai PT dan nominal (ongoing)
+
+                  </p>
+                </div>
                 <Button
                   variant="outline"
                   onClick={() => {
@@ -7934,13 +8011,13 @@ export default function PVR({
                     // 2. Process linked documents to include amountPaid and discount
                     let totalAmountPaid = 0;
                     let totalDiscount = 0;
-                    
-                    const processedLinkedDocs = linkedPIs.map((pi) => {
-                      const docStorageKey = `pvr_edit_doc_${pi.id}`;
+
+                    const processedLinkedDocs = linkedPIs.filter(pi => pi.documentType !== "PO").map((pi) => {
+                      const docStorageKey = `pv_edit_doc_${pi.id}`;
                       const savedData = localStorage.getItem(docStorageKey);
                       let amountPaid = pi.totalAmount;
                       let discount = 0;
-                      
+
                       if (savedData) {
                         try {
                           const parsed = JSON.parse(savedData);
@@ -7950,9 +8027,9 @@ export default function PVR({
                           if (parsed.discount) {
                             discount = parseFormattedNumber(parsed.discount);
                           }
-                        } catch {}
+                        } catch { }
                       }
-                      
+
                       totalAmountPaid += amountPaid;
                       totalDiscount += discount;
 
@@ -7968,17 +8045,17 @@ export default function PVR({
                     // 3. Create new PV object
                     const newPV = {
                       id: `pv-${Date.now()}`,
-                      pvNo: pvrForm.pvrNo ? pvrForm.pvrNo.replace("PVR", "PV") : `PV-${Date.now()}`,
-                      pvrNo: pvrForm.pvrNo,
-                      pvDate: pvrForm.pvrDate,
-                      supplierName: pvrForm.supplierName,
-                      currency: pvrForm.currency,
-                      rate: pvrForm.rate,
-                      term: pvrForm.term,
-                      pt: pvrForm.pt,
-                      bankAccount: pvrForm.bankAccount,
-                      paymentMethod: pvrForm.paymentMethod,
-                      remarks: pvrForm.remarks,
+                      pvNo: pvForm.pvNo ? pvForm.pvNo.replace("PVR", "PV") : `PV-${Date.now()}`,
+                      pvNo: pvForm.pvNo,
+                      pvDate: pvForm.pvDate,
+                      supplierName: pvForm.supplierName,
+                      currency: pvForm.currency,
+                      rate: pvForm.rate,
+                      term: pvForm.term,
+                      pt: pvForm.pt,
+                      bankAccount: pvForm.bankAccount,
+                      paymentMethod: pvForm.paymentMethod,
+                      remarks: pvForm.remarks,
                       totalAmount: grandTotal,
                       linkedDocs: processedLinkedDocs,
                       status: "Draft",
@@ -7989,36 +8066,39 @@ export default function PVR({
                     pvData.push(newPV);
                     localStorage.setItem("pvData", JSON.stringify(pvData));
 
-                    // 5. Close dialog and reset
+                    // 5. Update the corresponding PV to approved
+                    setPvData(prev => prev.map(pv => pv.pvNo === newPV.pvNo ? { ...pv, isApproved: true } : pv));
+
+                    // 6. Close dialog and reset
                     setShowCreatePVDialog(false);
                     resetForm();
                     setLinkedPIs([]);
-                    
-                    // 6. Show success dialog with new PV details
-                    setSavedPVNo(newPV.pvNo);
+
+                    // 7. Show success dialog with new PV details
+                    setSavedPvNo(newPV.pvNo);
                     setSavedPVLinkedDocs(processedLinkedDocs);
                     setShowPVSuccessDialog(true);
                   }}
                   className="bg-purple-600 hover:bg-purple-700 text-sm"
-                  disabled={!pvrForm.supplierName}
+                  disabled={!pvForm.supplierName}
                 >
-                  Save PV
+                  Approve
                 </Button>
               </div>
             </div>
           </div>
-          
+
         </DialogContent>
       </Dialog>
 
 
-      {/* Add Document Dialog in pvr edit mode*/}
+      {/* Add Document Dialog in PV edit mode*/}
       <Dialog
         open={showAddDocumentDialog}
         onOpenChange={setShowAddDocumentDialog}
       >
         <DialogContent className="w-full max-h-[85vh] flex flex-col overflow-x-hidden overflow-y-auto">
-            <DialogHeader className="flex-shrink-0">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle className="text-purple-900">
               Add Document
             </DialogTitle>
@@ -8030,7 +8110,7 @@ export default function PVR({
           <div className="px-4 pb-3 border-b border-gray-200 flex-shrink-0">
             <Input
               type="text"
-              placeholder="🔍 Search by document number..."
+              placeholder="ðŸ” Search by document number..."
               value={addDocumentSearchTerm}
               onChange={(e) => setAddDocumentSearchTerm(e.target.value)}
               className="border-purple-200 focus:border-purple-400 focus:ring-purple-400"
@@ -8060,8 +8140,8 @@ export default function PVR({
             {(() => {
               // Collect all linked document IDs from existing PVRs
               const linkedDocIds = new Set<string>();
-              pvrData.forEach((pvr) => {
-                pvr.linkedDocs?.forEach((doc) => {
+              pvData.forEach((pv) => {
+                pv.linkedDocs?.forEach((doc) => {
                   linkedDocIds.add(`${doc.documentType}-${doc.piNo}`);
                 });
               });
@@ -8073,12 +8153,12 @@ export default function PVR({
 
               // Filter unlinked documents and search by document number
               const searchLower = addDocumentSearchTerm.toLowerCase();
-              
+
               // First, find ENs matching search
               const searchedENs = mockExpenseNote.filter(
                 (en) => en.apNoteNo.toLowerCase().includes(searchLower),
               );
-              
+
               // Find main documents (PI/IC/SR) that are linked to searched ENs
               const mainDocsLinkedToSearchedENs = new Set<string>();
               searchedENs.forEach((en) => {
@@ -8109,7 +8189,7 @@ export default function PVR({
                   });
                 }
               });
-              
+
               const unlinkedPIs = mockpurchaseInvoice.filter(
                 (pi) =>
                   !linkedDocIds.has(
@@ -8134,8 +8214,8 @@ export default function PVR({
               );
 
               const unlinkedPRs = mockpurchaseReturns.filter(
-                (pr) => 
-                  !linkedDocIds.has(`PR-${pr.prNo}`) && pr.prNo.toLowerCase().includes(searchLower),  
+                (pr) =>
+                  !linkedDocIds.has(`PR-${pr.prNo}`) && pr.prNo.toLowerCase().includes(searchLower),
               )
 
               // Helper to render document card with grouped linked expense notes
@@ -8163,7 +8243,7 @@ export default function PVR({
                         ? doc.totalShipmentRequest
                         : docType === "PR"
                           ? doc.totalReturnAmount
-                        : doc.totalInvoice;
+                          : doc.totalInvoice;
 
                 // Find related purchase orders for PI, IC, and SR documents
                 let poIdToMatch: (string | string[] | null) = null;
@@ -8176,19 +8256,19 @@ export default function PVR({
                   const poNoValue = doc.poNo || (mockShipmentRequest.find(sr => sr.srNum === doc.srNum)?.poNo);
                   poIdToMatch = poNoValue;
                 }
-                
+
                 const relatedPOs = poIdToMatch
                   ? mockPurchaseOrder.filter(
-                      (po) => {
-                        if (docType === "PI") {
-                          return po.poId === poIdToMatch;
-                        } else {
-                          // For IC/SR, poIdToMatch could be string or array
-                          const poNoArray = Array.isArray(poIdToMatch) ? poIdToMatch : [poIdToMatch];
-                          return poNoArray.includes(po.purchaseOrderNo);
-                        }
-                      },
-                    )
+                    (po) => {
+                      if (docType === "PI") {
+                        return po.poId === poIdToMatch;
+                      } else {
+                        // For IC/SR, poIdToMatch could be string or array
+                        const poNoArray = Array.isArray(poIdToMatch) ? poIdToMatch : [poIdToMatch];
+                        return poNoArray.includes(po.purchaseOrderNo);
+                      }
+                    },
+                  )
                   : [];
 
                 // Find related expense notes based on linkedDocs matching
@@ -8212,7 +8292,7 @@ export default function PVR({
                     return linkedDocArray.some(
                       (linkedDoc: any) =>
                         linkedDoc.type ===
-                          docTypeMap[docType] &&
+                        docTypeMap[docType] &&
                         linkedDoc.docNo === docNo,
                     );
                   },
@@ -8349,7 +8429,7 @@ export default function PVR({
                       ...unlinkedSRs.map(d => ({ ...d, docType: "SR" as const })),
                       ...unlinkedPRs.map(d => ({ ...d, docType: "PR" as const }))
                     ];
-                    
+
                     // Expand documents with multiple POs into separate entries
                     const expandedDocs = allDocs.flatMap((doc: any) => {
                       if ((doc.docType === "IC" || doc.docType === "SR") && Array.isArray(doc.poNo) && doc.poNo.length > 1) {
@@ -8361,9 +8441,9 @@ export default function PVR({
                       }
                       return [doc];
                     });
-                    
+
                     const grouped = new Map<string, typeof expandedDocs>();
-                    
+
                     // First pass: identify which ICs/SRs have multiple POs
                     const docsByIcSr = new Map<string, (typeof expandedDocs)[number][]>();
                     expandedDocs.forEach((doc) => {
@@ -8377,7 +8457,7 @@ export default function PVR({
                         docsByIcSr.get(key)!.push(doc);
                       }
                     });
-                    
+
                     // Check which ICs/SRs have multiple unique POs
                     const icSrWithMultiplePOs = new Set<string>();
                     docsByIcSr.forEach((docs, key) => {
@@ -8386,7 +8466,7 @@ export default function PVR({
                         icSrWithMultiplePOs.add(key);
                       }
                     });
-                    
+
                     expandedDocs.forEach((doc) => {
                       let groupKey = "NO_KEY";
 
@@ -8573,17 +8653,17 @@ export default function PVR({
                       );
                       return pi
                         ? {
-                            id: `${type}-${pi.piId}`,
-                            piNo: pi.purchaseInvoiceNo,
-                            poNo: pi.poId,
-                            invoiceNo:
-                              pi.purchaseInvoiceNo,
-                            invoiceDate:
-                              pi.referenceDate || "",
-                            currency: "IDR",
-                            totalAmount: pi.totalAmount,
-                            documentType: "PI" as const,
-                          }
+                          id: `${type}-${pi.piId}`,
+                          piNo: pi.purchaseInvoiceNo,
+                          poNo: pi.poId,
+                          invoiceNo:
+                            pi.purchaseInvoiceNo,
+                          invoiceDate:
+                            pi.referenceDate || "",
+                          currency: "IDR",
+                          totalAmount: pi.totalAmount,
+                          documentType: "PI" as const,
+                        }
                         : null;
                     } else if (type === "IC") {
                       const ic = mockImportCosts.find(
@@ -8591,7 +8671,7 @@ export default function PVR({
                       );
                       // Extract all PO numbers from linkedDocs or poNo field
                       let poNumbers: string[] = [];
-                      
+
                       // First, collect from linkedDocs
                       if (ic?.linkedDocs && Array.isArray(ic.linkedDocs)) {
                         const poDocs = ic.linkedDocs.filter(
@@ -8599,7 +8679,7 @@ export default function PVR({
                         );
                         poNumbers = poDocs.map((doc: any) => doc.docNo);
                       }
-                      
+
                       // If no linkedDocs POs, use poNo field
                       if (poNumbers.length === 0) {
                         let poNo = ic?.poNo || "";
@@ -8610,35 +8690,35 @@ export default function PVR({
                           poNumbers = [poNo];
                         }
                       }
-                      
+
                       // If no POs found, return single entry with empty poNo
                       if (poNumbers.length === 0) {
                         return ic
                           ? {
-                              id: `${type}-${ic.icId}`,
-                              piNo: ic.icNum,
-                              poNo: "",
-                              invoiceNo: ic.invoiceNo || "",
-                              invoiceDate: ic.icDate || "",
-                              currency: ic.currency,
-                              totalAmount: ic.totalImportCost,
-                              documentType: "IC" as const,
-                            }
-                          : null;
-                      }
-                      
-                      // For multiple POs, this will be handled by expanding the entry
-                      return ic
-                        ? {
                             id: `${type}-${ic.icId}`,
                             piNo: ic.icNum,
-                            poNo: poNumbers,
+                            poNo: "",
                             invoiceNo: ic.invoiceNo || "",
                             invoiceDate: ic.icDate || "",
                             currency: ic.currency,
                             totalAmount: ic.totalImportCost,
                             documentType: "IC" as const,
                           }
+                          : null;
+                      }
+
+                      // For multiple POs, this will be handled by expanding the entry
+                      return ic
+                        ? {
+                          id: `${type}-${ic.icId}`,
+                          piNo: ic.icNum,
+                          poNo: poNumbers,
+                          invoiceNo: ic.invoiceNo || "",
+                          invoiceDate: ic.icDate || "",
+                          currency: ic.currency,
+                          totalAmount: ic.totalImportCost,
+                          documentType: "IC" as const,
+                        }
                         : null;
                     } else if (type === "SR") {
                       const sr = mockShipmentRequest.find(
@@ -8646,7 +8726,7 @@ export default function PVR({
                       );
                       // Extract all PO numbers from linkedDocs or poNo field
                       let poNumbers: string[] = [];
-                      
+
                       // First, collect from linkedDocs
                       if (sr?.linkedDocs && Array.isArray(sr.linkedDocs)) {
                         const poDocs = sr.linkedDocs.filter(
@@ -8654,7 +8734,7 @@ export default function PVR({
                         );
                         poNumbers = poDocs.map((doc: any) => doc.docNo);
                       }
-                      
+
                       // If no linkedDocs POs, use poNo field
                       if (poNumbers.length === 0) {
                         let poNo = sr?.poNo || "";
@@ -8665,35 +8745,35 @@ export default function PVR({
                           poNumbers = [poNo];
                         }
                       }
-                      
+
                       // If no POs found, return single entry with empty poNo
                       if (poNumbers.length === 0) {
                         return sr
                           ? {
-                              id: `${type}-${sr.srId}`,
-                              piNo: sr.srNum,
-                              poNo: "",
-                              invoiceNo: sr.invoiceNo || "",
-                              invoiceDate: sr.docReceivedDate,
-                              currency: sr.currency,
-                              totalAmount: sr.totalShipmentRequest,
-                              documentType: "SR" as const,
-                            }
-                          : null;
-                      }
-                      
-                      // For multiple POs, this will be handled by expanding the entry
-                      return sr
-                        ? {
                             id: `${type}-${sr.srId}`,
                             piNo: sr.srNum,
-                            poNo: poNumbers,
+                            poNo: "",
                             invoiceNo: sr.invoiceNo || "",
                             invoiceDate: sr.docReceivedDate,
                             currency: sr.currency,
                             totalAmount: sr.totalShipmentRequest,
                             documentType: "SR" as const,
                           }
+                          : null;
+                      }
+
+                      // For multiple POs, this will be handled by expanding the entry
+                      return sr
+                        ? {
+                          id: `${type}-${sr.srId}`,
+                          piNo: sr.srNum,
+                          poNo: poNumbers,
+                          invoiceNo: sr.invoiceNo || "",
+                          invoiceDate: sr.docReceivedDate,
+                          currency: sr.currency,
+                          totalAmount: sr.totalShipmentRequest,
+                          documentType: "SR" as const,
+                        }
                         : null;
                     } else if (type === "EN") {
                       const en = mockExpenseNote.find(
@@ -8701,16 +8781,16 @@ export default function PVR({
                       );
                       return en
                         ? {
-                            id: `${type}-${en.apnoteId}`,
-                            piNo: en.apNoteNo,
-                            poNo: "",
-                            invoiceNo: en.invoiceNumber,
-                            invoiceDate:
-                              en.apNoteCreateDate || "",
-                            currency: en.currency,
-                            totalAmount: en.totalInvoice,
-                            documentType: "EN" as const,
-                          }
+                          id: `${type}-${en.apnoteId}`,
+                          piNo: en.apNoteNo,
+                          poNo: "",
+                          invoiceNo: en.invoiceNumber,
+                          invoiceDate:
+                            en.apNoteCreateDate || "",
+                          currency: en.currency,
+                          totalAmount: en.totalInvoice,
+                          documentType: "EN" as const,
+                        }
                         : null;
                     } else if (type === "PO") {
                       const po = mockPurchaseOrder.find(
@@ -8718,15 +8798,15 @@ export default function PVR({
                       );
                       return po
                         ? {
-                            id: `${type}-${po.poId}`,
-                            piNo: "",
-                            poNo: po.purchaseOrderNo,
-                            invoiceNo: "",
-                            invoiceDate: po.createDate || "",
-                            currency: "IDR",
-                            totalAmount: po.totalAmount,
-                            documentType: "PO" as const,
-                          }
+                          id: `${type}-${po.poId}`,
+                          piNo: "",
+                          poNo: po.purchaseOrderNo,
+                          invoiceNo: "",
+                          invoiceDate: po.createDate || "",
+                          currency: "IDR",
+                          totalAmount: po.totalAmount,
+                          documentType: "PO" as const,
+                        }
                         : null;
                     } else if (type === "PR") {
                       const pr = mockpurchaseReturns.find(
@@ -8734,15 +8814,15 @@ export default function PVR({
                       );
                       return pr
                         ? {
-                            id: `${type}-${pr.prId}`,
-                            piNo: pr.piNo || "",
-                            poNo: pr.poNo || "",
-                            invoiceNo: pr.prNo,
-                            invoiceDate: pr.prDate || "",
-                            currency: pr.currency,
-                            totalAmount: -pr.totalReturnAmount,
-                            documentType: "PR" as const,
-                          }
+                          id: `${type}-${pr.prId}`,
+                          piNo: pr.piNo || "",
+                          poNo: pr.poNo || "",
+                          invoiceNo: pr.prNo,
+                          invoiceDate: pr.prDate || "",
+                          currency: pr.currency,
+                          totalAmount: -pr.totalReturnAmount,
+                          documentType: "PR" as const,
+                        }
                         : null;
                     }
                     return null;
@@ -8768,17 +8848,17 @@ export default function PVR({
                       );
                       return pi
                         ? {
-                            id: `${type}-${pi.piId}`,
-                            piNo: pi.purchaseInvoiceNo,
-                            poNo: pi.poId,
-                            invoiceNo:
-                              pi.purchaseInvoiceNo,
-                            invoiceDate:
-                              pi.referenceDate || "",
-                            currency: "IDR",
-                            totalAmount: pi.totalAmount,
-                            documentType: "PI" as const,
-                          }
+                          id: `${type}-${pi.piId}`,
+                          piNo: pi.purchaseInvoiceNo,
+                          poNo: pi.poId,
+                          invoiceNo:
+                            pi.purchaseInvoiceNo,
+                          invoiceDate:
+                            pi.referenceDate || "",
+                          currency: "IDR",
+                          totalAmount: pi.totalAmount,
+                          documentType: "PI" as const,
+                        }
                         : null;
                     } else if (type === "IC") {
                       const ic = mockImportCosts.find(
@@ -8786,7 +8866,7 @@ export default function PVR({
                       );
                       // Extract all PO numbers from linkedDocs or poNo field
                       let poNumbers: string[] = [];
-                      
+
                       // First, collect from linkedDocs
                       if (ic?.linkedDocs && Array.isArray(ic.linkedDocs)) {
                         const poDocs = ic.linkedDocs.filter(
@@ -8794,7 +8874,7 @@ export default function PVR({
                         );
                         poNumbers = poDocs.map((doc: any) => doc.docNo);
                       }
-                      
+
                       // If no linkedDocs POs, use poNo field
                       if (poNumbers.length === 0) {
                         let poNo = ic?.poNo || "";
@@ -8805,35 +8885,35 @@ export default function PVR({
                           poNumbers = [poNo];
                         }
                       }
-                      
+
                       // If no POs found, return single entry with empty poNo
                       if (poNumbers.length === 0) {
                         return ic
                           ? {
-                              id: `${type}-${ic.icId}`,
-                              piNo: ic.icNum,
-                              poNo: "",
-                              invoiceNo: ic.invoiceNo || "",
-                              invoiceDate: ic.icDate || "",
-                              currency: ic.currency,
-                              totalAmount: ic.totalImportCost,
-                              documentType: "IC" as const,
-                            }
-                          : null;
-                      }
-                      
-                      // For multiple POs, this will be handled by expanding the entry
-                      return ic
-                        ? {
                             id: `${type}-${ic.icId}`,
                             piNo: ic.icNum,
-                            poNo: poNumbers,
+                            poNo: "",
                             invoiceNo: ic.invoiceNo || "",
                             invoiceDate: ic.icDate || "",
                             currency: ic.currency,
                             totalAmount: ic.totalImportCost,
                             documentType: "IC" as const,
                           }
+                          : null;
+                      }
+
+                      // For multiple POs, this will be handled by expanding the entry
+                      return ic
+                        ? {
+                          id: `${type}-${ic.icId}`,
+                          piNo: ic.icNum,
+                          poNo: poNumbers,
+                          invoiceNo: ic.invoiceNo || "",
+                          invoiceDate: ic.icDate || "",
+                          currency: ic.currency,
+                          totalAmount: ic.totalImportCost,
+                          documentType: "IC" as const,
+                        }
                         : null;
                     } else if (type === "SR") {
                       const sr = mockShipmentRequest.find(
@@ -8841,7 +8921,7 @@ export default function PVR({
                       );
                       // Extract all PO numbers from linkedDocs or poNo field
                       let poNumbers: string[] = [];
-                      
+
                       // First, collect from linkedDocs
                       if (sr?.linkedDocs && Array.isArray(sr.linkedDocs)) {
                         const poDocs = sr.linkedDocs.filter(
@@ -8849,7 +8929,7 @@ export default function PVR({
                         );
                         poNumbers = poDocs.map((doc: any) => doc.docNo);
                       }
-                      
+
                       // If no linkedDocs POs, use poNo field
                       if (poNumbers.length === 0) {
                         let poNo = sr?.poNo || "";
@@ -8860,35 +8940,35 @@ export default function PVR({
                           poNumbers = [poNo];
                         }
                       }
-                      
+
                       // If no POs found, return single entry with empty poNo
                       if (poNumbers.length === 0) {
                         return sr
                           ? {
-                              id: `${type}-${sr.srId}`,
-                              piNo: sr.srNum,
-                              poNo: "",
-                              invoiceNo: sr.invoiceNo || "",
-                              invoiceDate: sr.docReceivedDate,
-                              currency: sr.currency,
-                              totalAmount: sr.totalShipmentRequest,
-                              documentType: "SR" as const,
-                            }
-                          : null;
-                      }
-                      
-                      // For multiple POs, this will be handled by expanding the entry
-                      return sr
-                        ? {
                             id: `${type}-${sr.srId}`,
                             piNo: sr.srNum,
-                            poNo: poNumbers,
+                            poNo: "",
                             invoiceNo: sr.invoiceNo || "",
                             invoiceDate: sr.docReceivedDate,
                             currency: sr.currency,
                             totalAmount: sr.totalShipmentRequest,
                             documentType: "SR" as const,
                           }
+                          : null;
+                      }
+
+                      // For multiple POs, this will be handled by expanding the entry
+                      return sr
+                        ? {
+                          id: `${type}-${sr.srId}`,
+                          piNo: sr.srNum,
+                          poNo: poNumbers,
+                          invoiceNo: sr.invoiceNo || "",
+                          invoiceDate: sr.docReceivedDate,
+                          currency: sr.currency,
+                          totalAmount: sr.totalShipmentRequest,
+                          documentType: "SR" as const,
+                        }
                         : null;
                     } else if (type === "EN") {
                       const en = mockExpenseNote.find(
@@ -8896,16 +8976,16 @@ export default function PVR({
                       );
                       return en
                         ? {
-                            id: `${type}-${en.apnoteId}`,
-                            piNo: en.apNoteNo,
-                            poNo: "",
-                            invoiceNo: en.invoiceNumber,
-                            invoiceDate:
-                              en.apNoteCreateDate || "",
-                            currency: en.currency,
-                            totalAmount: en.totalInvoice,
-                            documentType: "EN" as const,
-                          }
+                          id: `${type}-${en.apnoteId}`,
+                          piNo: en.apNoteNo,
+                          poNo: "",
+                          invoiceNo: en.invoiceNumber,
+                          invoiceDate:
+                            en.apNoteCreateDate || "",
+                          currency: en.currency,
+                          totalAmount: en.totalInvoice,
+                          documentType: "EN" as const,
+                        }
                         : null;
                     } else if (type === "PO") {
                       const po = mockPurchaseOrder.find(
@@ -8913,15 +8993,15 @@ export default function PVR({
                       );
                       return po
                         ? {
-                            id: `${type}-${po.poId}`,
-                            piNo: "",
-                            poNo: po.purchaseOrderNo,
-                            invoiceNo: "",
-                            invoiceDate: po.createDate || "",
-                            currency: "IDR",
-                            totalAmount: po.totalAmount,
-                            documentType: "PO" as const,
-                          }
+                          id: `${type}-${po.poId}`,
+                          piNo: "",
+                          poNo: po.purchaseOrderNo,
+                          invoiceNo: "",
+                          invoiceDate: po.createDate || "",
+                          currency: "IDR",
+                          totalAmount: po.totalAmount,
+                          documentType: "PO" as const,
+                        }
                         : null;
                     }
                     return null;
@@ -8951,7 +9031,7 @@ export default function PVR({
         open={showAddLinksDialog}
         onOpenChange={setShowAddLinksDialog}
       >
-             <DialogContent
+        <DialogContent
           className="w-full flex flex-col overflow-x-hidden overflow-y-auto"
           style={{ height: "85vh" }}
         >
@@ -8967,7 +9047,7 @@ export default function PVR({
           <div className="px-4 pb-3 border-b border-gray-200 flex-shrink-0">
             <Input
               type="text"
-              placeholder="🔍 Search by document number..."
+              placeholder="ðŸ” Search by document number..."
               value={addLinksSearchTerm}
               onChange={(e) => setAddLinksSearchTerm(e.target.value)}
               className="border-purple-200 focus:border-purple-400 focus:ring-purple-400"
@@ -8997,8 +9077,8 @@ export default function PVR({
             {(() => {
               // Collect all linked document IDs from existing PVRs
               const linkedDocIds = new Set<string>();
-              pvrData.forEach((pvr) => {
-                pvr.linkedDocs?.forEach((doc) => {
+              pvData.forEach((pv) => {
+                pv.linkedDocs?.forEach((doc) => {
                   linkedDocIds.add(`${doc.documentType}-${doc.piNo}`);
                 });
               });
@@ -9010,12 +9090,12 @@ export default function PVR({
 
               // Filter unlinked documents and search by document number
               const searchLower = addLinksSearchTerm.toLowerCase();
-              
+
               // First, find ENs matching search
               const searchedENs = mockExpenseNote.filter(
                 (en) => en.apNoteNo.toLowerCase().includes(searchLower),
               );
-              
+
               // Find main documents (PI/IC/SR) that are linked to searched ENs
               const mainDocsLinkedToSearchedENs = new Set<string>();
               searchedENs.forEach((en) => {
@@ -9046,7 +9126,7 @@ export default function PVR({
                   });
                 }
               });
-              
+
               const unlinkedPIs = mockpurchaseInvoice.filter(
                 (pi) =>
                   !linkedDocIds.has(
@@ -9101,13 +9181,13 @@ export default function PVR({
                     : docType === "SR"
                       ? doc.poNo || (mockShipmentRequest.find(sr => sr.srNum === doc.srNum)?.poNo)
                       : docType === "PR" ? doc.poNo : null;
-                
+
                 const relatedPOs = poIdToMatch
                   ? mockPurchaseOrder.filter(
-                      (po) => docType === "PI"
-                        ? po.poId === poIdToMatch
-                        : po.purchaseOrderNo === poIdToMatch,
-                    )
+                    (po) => docType === "PI"
+                      ? po.poId === poIdToMatch
+                      : po.purchaseOrderNo === poIdToMatch,
+                  )
                   : [];
 
                 // Find related expense notes based on linkedDocs matching
@@ -9131,7 +9211,7 @@ export default function PVR({
                     return linkedDocArray.some(
                       (linkedDoc: any) =>
                         linkedDoc.type ===
-                          docTypeMap[docType] &&
+                        docTypeMap[docType] &&
                         linkedDoc.docNo === docNo,
                     );
                   },
@@ -9158,14 +9238,14 @@ export default function PVR({
                     return linkedDocArray.some(
                       (linkedDoc: any) =>
                         linkedDoc.type ===
-                          docTypeMap[docType] &&
+                        docTypeMap[docType] &&
                         linkedDoc.docNo === docNo,
                     );
                   },
                 );
 
                 return (
-                   <div
+                  <div
                     key={`${docType}-${docNo}`}
                     className="rounded-lg bg-white shadow-sm hover:shadow-md transition-shadow flex h-16"
                   >
@@ -9202,7 +9282,7 @@ export default function PVR({
                         }}
                       />
                     </div>
-                    
+
                     {/* Related Purchase Order - Far Left Side */}
                     {relatedPOs.length > 0 && (
                       <div className="flex-1 px-3 overflow-hidden min-w-[300px] border-r border-gray-200 flex items-center gap-2 h-full">
@@ -9244,7 +9324,7 @@ export default function PVR({
                             <span className="font-medium text-gray-700 truncate whitespace-nowrap">
                               {docNo}
                             </span>
-                            
+
                           </div>
                           <div className="text-xs text-gray-500 line-clamp-1 truncate whitespace-nowrap">
                             Total: {doc.currency || "IDR"} {formatNumber(amount)}
@@ -9267,12 +9347,12 @@ export default function PVR({
                             <span className="text-gray-500 truncate whitespace-nowrap">
                               Total: {en.currency || "IDR"} {formatNumber(en.totalInvoice)}
                             </span>
-                           
+
                           </div>
                         ))}
                       </div>
                     )}
-                    
+
                     {/* Empty state if no AP Notes */}
                     {relatedENs.length === 0 && (
                       <div className="flex-1 px-3 flex items-center justify-center text-gray-400 text-xs border-r border-gray-200 min-w-[300px] h-full">
@@ -9320,7 +9400,7 @@ export default function PVR({
                       ...unlinkedICs.map(d => ({ ...d, docType: "IC" as const })),
                       ...unlinkedSRs.map(d => ({ ...d, docType: "SR" as const }))
                     ];
-                    
+
                     // Expand documents with multiple POs into separate entries
                     const expandedDocs = allDocs.flatMap((doc: any) => {
                       if ((doc.docType === "IC" || doc.docType === "SR") && Array.isArray(doc.poNo) && doc.poNo.length > 1) {
@@ -9332,9 +9412,9 @@ export default function PVR({
                       }
                       return [doc];
                     });
-                    
+
                     const grouped = new Map<string, typeof expandedDocs>();
-                    
+
                     // First pass: identify which ICs/SRs have multiple POs
                     const docsByIcSr = new Map<string, (typeof expandedDocs)[number][]>();
                     expandedDocs.forEach((doc) => {
@@ -9348,7 +9428,7 @@ export default function PVR({
                         docsByIcSr.get(key)!.push(doc);
                       }
                     });
-                    
+
                     // Check which ICs/SRs have multiple unique POs
                     const icSrWithMultiplePOs = new Set<string>();
                     docsByIcSr.forEach((docs, key) => {
@@ -9357,7 +9437,7 @@ export default function PVR({
                         icSrWithMultiplePOs.add(key);
                       }
                     });
-                    
+
                     expandedDocs.forEach((doc) => {
                       let groupKey = "NO_KEY";
 
@@ -9565,17 +9645,17 @@ export default function PVR({
                     );
                     return pi
                       ? {
-                          id: `${type}-${pi.piId}`,
-                          piNo: pi.purchaseInvoiceNo,
-                          poNo: pi.poId,
-                          invoiceNo:
-                            pi.purchaseInvoiceNo,
-                          invoiceDate:
-                            pi.referenceDate || "",
-                          currency: "IDR",
-                          totalAmount: pi.totalAmount,
-                          documentType: "PI" as const,
-                        }
+                        id: `${type}-${pi.piId}`,
+                        piNo: pi.purchaseInvoiceNo,
+                        poNo: pi.poId,
+                        invoiceNo:
+                          pi.purchaseInvoiceNo,
+                        invoiceDate:
+                          pi.referenceDate || "",
+                        currency: "IDR",
+                        totalAmount: pi.totalAmount,
+                        documentType: "PI" as const,
+                      }
                       : null;
                   } else if (type === "IC") {
                     const ic = mockImportCosts.find(
@@ -9583,15 +9663,15 @@ export default function PVR({
                     );
                     return ic
                       ? {
-                          id: `${type}-${ic.icId}`,
-                          piNo: ic.icNum,
-                          poNo: ic.poNo || "",
-                          invoiceNo: ic.invoiceNo || "",
-                          invoiceDate: ic.icDate || "",
-                          currency: ic.currency,
-                          totalAmount: ic.totalImportCost,
-                          documentType: "IC" as const,
-                        }
+                        id: `${type}-${ic.icId}`,
+                        piNo: ic.icNum,
+                        poNo: ic.poNo || "",
+                        invoiceNo: ic.invoiceNo || "",
+                        invoiceDate: ic.icDate || "",
+                        currency: ic.currency,
+                        totalAmount: ic.totalImportCost,
+                        documentType: "IC" as const,
+                      }
                       : null;
                   } else if (type === "SR") {
                     const sr = mockShipmentRequest.find(
@@ -9599,16 +9679,16 @@ export default function PVR({
                     );
                     return sr
                       ? {
-                          id: `${type}-${sr.srId}`,
-                          piNo: sr.srNum,
-                          poNo: sr.poNo || "",
-                          invoiceNo: sr.invoiceNo || "",
-                          invoiceDate: sr.docReceivedDate,
-                          currency: sr.currency,
-                          totalAmount:
-                            sr.totalShipmentRequest,
-                          documentType: "SR" as const,
-                        }
+                        id: `${type}-${sr.srId}`,
+                        piNo: sr.srNum,
+                        poNo: sr.poNo || "",
+                        invoiceNo: sr.invoiceNo || "",
+                        invoiceDate: sr.docReceivedDate,
+                        currency: sr.currency,
+                        totalAmount:
+                          sr.totalShipmentRequest,
+                        documentType: "SR" as const,
+                      }
                       : null;
                   } else if (type === "EN") {
                     const en = mockExpenseNote.find(
@@ -9616,16 +9696,16 @@ export default function PVR({
                     );
                     return en
                       ? {
-                          id: `${type}-${en.apnoteId}`,
-                          piNo: en.apNoteNo,
-                          poNo: "",
-                          invoiceNo: en.invoiceNumber,
-                          invoiceDate:
-                            en.apNoteCreateDate || "",
-                          currency: en.currency,
-                          totalAmount: en.totalInvoice,
-                          documentType: "EN" as const,
-                        }
+                        id: `${type}-${en.apnoteId}`,
+                        piNo: en.apNoteNo,
+                        poNo: "",
+                        invoiceNo: en.invoiceNumber,
+                        invoiceDate:
+                          en.apNoteCreateDate || "",
+                        currency: en.currency,
+                        totalAmount: en.totalInvoice,
+                        documentType: "EN" as const,
+                      }
                       : null;
                   } else if (type === "PR") {
                     const pr = mockpurchaseReturns.find(
@@ -9633,15 +9713,15 @@ export default function PVR({
                     );
                     return pr
                       ? {
-                          id: `${type}-${pr.prId}`,
-                          piNo: pr.piNo || "",
-                          poNo: pr.poNo || "",
-                          invoiceNo: pr.prNo,
-                          invoiceDate: pr.prDate || "",
-                          currency: pr.currency,
-                          totalAmount: -pr.totalReturnAmount,
-                          documentType: "PR" as const,
-                        }
+                        id: `${type}-${pr.prId}`,
+                        piNo: pr.piNo || "",
+                        poNo: pr.poNo || "",
+                        invoiceNo: pr.prNo,
+                        invoiceDate: pr.prDate || "",
+                        currency: pr.currency,
+                        totalAmount: -pr.totalReturnAmount,
+                        documentType: "PR" as const,
+                      }
                       : null;
                   }
                   return null;
@@ -9673,10 +9753,10 @@ export default function PVR({
         <DialogContent className="w-[400px] max-w-full mx-auto">
           <DialogHeader>
             <DialogTitle className="text-purple-900">
-              Void PVR
+              Void PV
             </DialogTitle>
             <DialogDescription>
-              Please provide a reason for voiding this PVR
+              Please provide a reason for voiding this PV
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -9695,7 +9775,7 @@ export default function PVR({
                 value={voidReason}
                 onChange={(e) => setVoidReason(e.target.value)}
                 rows={4}
-                placeholder="Enter reason for voiding this PVR..."
+                placeholder="Enter reason for voiding this PV..."
               />
             </div>
           </div>
@@ -9712,88 +9792,15 @@ export default function PVR({
               disabled={!voidReason.trim()}
             >
               <XCircle className="h-4 w-4 mr-2" />
-              Void PVR
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Approve Dialog */}
-      <Dialog
-        open={showApproveDialog}
-        onOpenChange={setShowApproveDialog}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="text-purple-900">
-              Approve Payment Voucher Request
-            </DialogTitle>
-            <DialogDescription>
-              Please review the PVR details before approving
-            </DialogDescription>
-          </DialogHeader>
-          {selectedForApprove && (
-            <div className="space-y-4">
-              <Card className="p-4 bg-purple-50 border-purple-200">
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <Receipt className="h-5 w-5 text-purple-600" />
-                    <div>
-                      <div className="text-sm text-gray-600">
-                        PVR No
-                      </div>
-                      <div className="text-purple-900">
-                        {selectedForApprove.pvrNo}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Building2 className="h-5 w-5 text-purple-600" />
-                    <div>
-                      <div className="text-sm text-gray-600">
-                        Supplier
-                      </div>
-                      <div className="text-gray-900">
-                        {selectedForApprove.supplierName}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <DollarSign className="h-5 w-5 text-purple-600" />
-                    <div>
-                      <div className="text-sm text-gray-600">
-                        Amount
-                      </div>
-                      <div className="text-gray-900">
-                        {selectedForApprove.currency}{" "}
-                        {selectedForApprove.totalInvoice.toLocaleString()}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            </div>
-          )}
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setShowApproveDialog(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleApprove}
-              className="bg-purple-600 hover:bg-purple-700"
-            >
-              <Check className="h-4 w-4 mr-2" />
-              Approve
+              Void PV
             </Button>
           </div>
         </DialogContent>
       </Dialog>
 
 
-      {/* Success Dialog - PVR Created */}
+
+      {/* Success Dialog - PV Created */}
       <Dialog
         open={showSuccessDialog}
         onOpenChange={setShowSuccessDialog}
@@ -9816,16 +9823,16 @@ export default function PVR({
                   />
                 </svg>
               </div>
-              PVR Saved
+              PV Saved
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="p-4 bg-purple-50 rounded-lg border border-purple-100">
               <div className="text-sm text-gray-600 mb-1">
-                PVR No
+                PV No
               </div>
               <div className="text-lg font-semibold text-purple-900">
-                {savedPvrNo}
+                {savedPvNo}
               </div>
             </div>
 
@@ -9921,7 +9928,7 @@ export default function PVR({
               <Button
                 onClick={() => {
                   setShowSuccessDialog(false);
-                  // Expand the newly created PVR
+                  // Expand the newly created PV
                   setExpandedItems((prev) =>
                     new Set([
                       Date.now().toString(),
@@ -9938,7 +9945,7 @@ export default function PVR({
         </DialogContent>
       </Dialog>
 
-       {/* Success Dialog - PV Created */}
+      {/* Success Dialog - PV Created */}
       <Dialog
         open={showPVSuccessDialog}
         onOpenChange={setShowPVSuccessDialog}
@@ -9961,18 +9968,11 @@ export default function PVR({
                   />
                 </svg>
               </div>
-              PV Saved
+              Payment Voucher Approved
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="p-4 bg-purple-50 rounded-lg border border-purple-100">
-              <div className="text-sm text-gray-600 mb-1">
-                PV No
-              </div>
-              <div className="text-lg font-semibold text-purple-900">
-                {savedPVNo}
-              </div>
-            </div>
+
 
             {/* Linked Documents Section */}
             <div className="space-y-2">
@@ -10084,12 +10084,14 @@ export default function PVR({
                 variant="outline"
                 className="bg-purple-100 text-purple-700 border-purple-200"
               >
-              {(() => {
+                {(() => {
                   const linkedDocsCount = !selectedForLinkedDocs?.linkedDocs ||
                     selectedForLinkedDocs.linkedDocs.length === 0
                     ? 0
-                    : selectedForLinkedDocs.linkedDocs.length;
-                  
+                    : selectedForLinkedDocs.linkedDocs.filter(
+                        (doc: any) => doc.documentTypeLabel !== "Reimburse without PO"
+                      ).length;
+
                   // Load PV data and find related PVs
                   let pvData: any[] = [];
                   try {
@@ -10098,9 +10100,9 @@ export default function PVR({
                   } catch (e) {
                     pvData = [];
                   }
-                  
+
                   const linkedPVs = pvData.filter(
-                    (pv) => pv.pvrNo === selectedForLinkedDocs?.pvrNo
+                    (pv) => pv.pvNo === selectedForLinkedDocs?.pvNo
                   );
 
                   const filteredDocs = (selectedForLinkedDocs?.linkedDocs || []).filter((doc) => {
@@ -10114,7 +10116,7 @@ export default function PVR({
                     const hasValidNumber =
                       doc.documentType === "PO"
                         ? (doc.poNo && doc.poNo.trim() !== "") ||
-                          (doc.invoiceNo && doc.invoiceNo.trim() !== "")
+                        (doc.invoiceNo && doc.invoiceNo.trim() !== "")
                         : doc.piNo && doc.piNo.trim() !== ""
                     return isValidType && hasValidNumber;
                   });
@@ -10224,11 +10226,14 @@ export default function PVR({
                   // };
 
                   const documentGroups = [];
-                  
+
                   // Count PVs per group + all documents
                   const pvCountPerGroup = linkedPVs.length > 0 ? documentGroups.length * linkedPVs.length : 0;
-                  
-                  return linkedDocsCount + pvCountPerGroup;
+
+                  // Count reimburse link
+                  const reimburseCount = selectedForLinkedDocs?.linkedFromReimburseNo ? 1 : 0;
+
+                  return linkedDocsCount + pvCountPerGroup + reimburseCount;
                 })()}
               </Badge>
             </DialogTitle>
@@ -10243,10 +10248,10 @@ export default function PVR({
               } catch (e) {
                 pvData = [];
               }
-              
+
               // Find PVs created from this PVR
               const linkedPVs = pvData.filter(
-                (pv) => pv.pvrNo === selectedForLinkedDocs?.pvrNo
+                (pv) => pv.pvNo === selectedForLinkedDocs?.pvNo
               );
 
               const linkedDocs =
@@ -10265,11 +10270,14 @@ export default function PVR({
                   const hasValidNumber =
                     doc.documentType === "PO"
                       ? (doc.poNo && doc.poNo.trim() !== "") ||
-                        (doc.invoiceNo &&
-                          doc.invoiceNo.trim() !== "")
+                      (doc.invoiceNo &&
+                        doc.invoiceNo.trim() !== "")
                       : doc.piNo && doc.piNo.trim() !== "";
 
-                  return isValidType && hasValidNumber;
+                  // Exclude Reimburse without PO docs (already shown separately)
+                  const isReimburseDoc = (doc as any).documentTypeLabel === "Reimburse without PO";
+
+                  return isValidType && hasValidNumber && !isReimburseDoc;
                 },
               );
 
@@ -10354,7 +10362,7 @@ export default function PVR({
                 docs.forEach((doc) => {
                   if (!processedIds.has(doc.id)) {
                     let poNumber = doc.poNo || "";
-                    
+
                     // For PR documents, try multiple ways to find the PO number
                     if (doc.documentType === "PR" && (!poNumber || poNumber === "")) {
                       // 1. Try to find the PO from the linked PI in the same set of documents
@@ -10367,23 +10375,23 @@ export default function PVR({
                         if (pr && pr.poNo) {
                           poNumber = pr.poNo;
                         } else if (pr && pr.piNo) {
-                           const pi = mockpurchaseInvoice.find(p => p.purchaseInvoiceNo === pr.piNo);
-                           if (pi && pi.noPO) {
-                             poNumber = pi.noPO;
-                           }
+                          const pi = mockpurchaseInvoice.find(p => p.purchaseInvoiceNo === pr.piNo);
+                          if (pi && pi.noPO) {
+                            poNumber = pi.noPO;
+                          }
                         }
                       }
                     }
-                    
+
                     // If still empty, use its own identifier as a unique group key
                     if (!poNumber) poNumber = `GROUP-${doc.id}`;
-                    
+
                     // Find all related documents
                     const relatedGroup = docs.filter((d) => {
                       if (processedIds.has(d.id)) return false;
-                      
+
                       let dPoNumber = d.poNo || "";
-                      
+
                       // Same logic for PR documents in the group
                       if (d.documentType === "PR" && (!dPoNumber || dPoNumber === "")) {
                         const matchingPI = docs.find(docPI => docPI.documentType === "PI" && docPI.piNo === d.piNo);
@@ -10401,10 +10409,10 @@ export default function PVR({
                           }
                         }
                       }
-                      
+
                       // Check for direct PO match
                       if (dPoNumber && poNumber && dPoNumber === poNumber) return true;
-                      
+
                       // Check for PR to PI linkage within the group
                       if (d.documentType === "PR" && doc.documentType === "PI" && d.piNo === doc.piNo) return true;
                       if (doc.documentType === "PR" && d.documentType === "PI" && doc.piNo === d.piNo) return true;
@@ -10427,10 +10435,48 @@ export default function PVR({
               };
 
               const documentGroups = groupRelatedDocuments(filteredDocs);
-              const hasContent = documentGroups.length > 0 || linkedPVs.length > 0;
+              const hasReimburse = !!selectedForLinkedDocs?.linkedFromReimburseNo;
+              const hasContent = documentGroups.length > 0 || linkedPVs.length > 0 || hasReimburse;
 
               return hasContent ? (
                 <>
+                  {/* Linked Reimburse Without PO */}
+                  {hasReimburse && (
+                    <div
+                      className="p-4 bg-white border border-purple-200 rounded-lg hover:shadow-md transition-shadow cursor-pointer hover:bg-purple-50"
+                      onClick={() => {
+                        setShowLinkedDocsDialog(false);
+                        if (onNavigateToReimburse) {
+                          onNavigateToReimburse(selectedForLinkedDocs.linkedFromReimburseNo!);
+                        } else {
+                          window.dispatchEvent(
+                            new CustomEvent("navigateToReimburse", {
+                              detail: { reimburseNo: selectedForLinkedDocs!.linkedFromReimburseNo },
+                            }),
+                          );
+                          window.dispatchEvent(
+                            new CustomEvent("changeTab", {
+                              detail: { tab: "REIMBURSE WITHOUT PO" },
+                            }),
+                          );
+                        }
+                      }}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <FileText className="w-5 h-5 text-purple-600" />
+                          <div>
+                            <p className="text-purple-700 font-medium">
+                              {selectedForLinkedDocs.linkedFromReimburseNo}
+                            </p>
+                            <p className="text-sm text-gray-500">Reimburse Without PO</p>
+                          </div>
+                        </div>
+                        <Badge className="bg-purple-600 text-white">REIM</Badge>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Linked Documents Section */}
                   {documentGroups.length > 0 && (
                     <>
@@ -10481,40 +10527,7 @@ export default function PVR({
                           >
                             {/* Group Content */}
                             <div className="space-y-2">
-                              {/* Created Payment Vouchers - Inside Group */}
-                              {linkedPVs.length > 0 && (
-                                <>
-                                  {linkedPVs.map((pv, pvIndex) => (
-                                    <div
-                                      key={`pv-${pvIndex}`}
-                                      className="w-full p-4 bg-white border border-purple-200 rounded-lg hover:shadow-md transition-shadow cursor-pointer hover:bg-purple-50"
-                                      onClick={() => {
-                                        setShowLinkedDocsDialog(false);
-                                        // Navigate to PV page
-                                        const pvNumber = pv.pvNo || pv.id;
-                                        onNavigateToPV?.(pvNumber);
-                                      }}
-                                    >
-                                      <div className="flex items-start justify-between">
-                                        <div className="flex items-start gap-3 flex-1">
-                                          <FileText className="w-5 h-5 text-purple-600 mt-0.5 flex-shrink-0" />
-                                          <div className="flex-1">
-                                            <p className="text-purple-700 font-semibold text-sm">
-                                              {pv.pvNo || pv.id}
-                                            </p>
-                                            <p className="text-xs text-gray-600 mt-0.5">
-                                              Payment Voucher Request
-                                            </p>
-                                          </div>
-                                        </div>
-                                        <Badge variant="outline" className="bg-purple-100 text-purple-700 border-purple-200">
-                                          PVR
-                                        </Badge>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </>
-                              )}
+
 
                               {/* Linked Documents */}
                               {group.documents.map((doc, docIndex) => {
@@ -10522,52 +10535,63 @@ export default function PVR({
                                 const styles = getDocTypeStyles(docType);
                                 const badgeLabel =
                                   docType === "EN" ? "AP" : docType;
-                           
 
-                               return (
-  <div
-    key={doc.id}
-    className={`w-full p-4 bg-white border ${styles.border} rounded-lg hover:shadow-md transition-shadow cursor-pointer ${styles.hover}`}
-    onClick={() => {
-      // Navigation logic for PR (you may need to add this if not present)
-      if (docType === "PR") {
-        // Add navigation to Purchase Return page if available
-        // onNavigateToPurchaseReturn?.(doc.piNo);
-      } else {
-        // Existing navigation logic...
-      }
-    }}
-  >
-    <div className="flex items-start justify-between">
-      <div className="flex items-start gap-3 flex-1">
-        <FileText
-          className={`w-5 h-5 ${styles.icon} mt-0.5 flex-shrink-0`}
-        />
-        <div className="flex-1">
-          <p className={`${styles.text} font-semibold text-sm`}>
-            {docType === "PO"
-              ? (() => {
-                  if (doc.invoiceNo) {
-                    return doc.invoiceNo;
-                  }
-                  const relatedPO = mockPurchaseOrder.find(
-                    (po) => po.poId === doc.poNo,
-                  );
-                  return relatedPO?.purchaseOrderNo || doc.poNo || "";
-                })()
-              : doc.piNo}
-          </p>
-          <p className="text-xs text-gray-600 mt-0.5">
-            {getDocumentTypeLabel(docType)}
-          </p>
-        </div>
-      </div>
-      <Badge variant="outline" className={styles.badge}>
-        {badgeLabel}
-      </Badge>
-    </div>
-  </div>
-);
+
+                                return (
+                                  <div
+                                    key={doc.id}
+                                    className={`w-full p-4 bg-white border ${styles.border} rounded-lg hover:shadow-md transition-shadow cursor-pointer ${styles.hover}`}
+                                    onClick={() => {
+                                      setShowLinkedDocsDialog(false);
+                                      if (docType === "PI") {
+                                        onNavigateToPurchaseInvoice?.(doc.piNo);
+                                      } else if (docType === "PO") {
+                                        const poNo = doc.invoiceNo || (() => {
+                                          const relatedPO = mockPurchaseOrder.find(po => po.poId === doc.poNo);
+                                          return relatedPO?.purchaseOrderNo || doc.poNo || "";
+                                        })();
+                                        onNavigateToPurchaseOrder?.(poNo);
+                                      } else if (docType === "IC") {
+                                        onNavigateToImportCost?.(doc.piNo);
+                                      } else if (docType === "SR") {
+                                        onNavigateToShipmentRequest?.(doc.piNo);
+                                      } else if (docType === "EN") {
+                                        onNavigateToAPNote?.(doc.piNo);
+                                      } else if (docType === "PR") {
+                                        // Navigate to Purchase Return if available
+                                      }
+                                    }}
+                                  >
+                                    <div className="flex items-start justify-between">
+                                      <div className="flex items-start gap-3 flex-1">
+                                        <FileText
+                                          className={`w-5 h-5 ${styles.icon} mt-0.5 flex-shrink-0`}
+                                        />
+                                        <div className="flex-1">
+                                          <p className={`${styles.text} font-semibold text-sm`}>
+                                            {docType === "PO"
+                                              ? (() => {
+                                                if (doc.invoiceNo) {
+                                                  return doc.invoiceNo;
+                                                }
+                                                const relatedPO = mockPurchaseOrder.find(
+                                                  (po) => po.poId === doc.poNo,
+                                                );
+                                                return relatedPO?.purchaseOrderNo || doc.poNo || "";
+                                              })()
+                                              : doc.piNo}
+                                          </p>
+                                          <p className="text-xs text-gray-600 mt-0.5">
+                                            {getDocumentTypeLabel(doc)}
+                                          </p>
+                                        </div>
+                                      </div>
+                                      <Badge variant="outline" className={styles.badge}>
+                                        {badgeLabel}
+                                      </Badge>
+                                    </div>
+                                  </div>
+                                );
                               })}
                             </div>
                           </div>
@@ -10606,7 +10630,7 @@ export default function PVR({
             <DialogTitle>
               Edit Discount {getDocumentNumber(editingDocument)}
             </DialogTitle>
-            
+
           </DialogHeader>
 
           {/* Saved Notification */}
@@ -10633,8 +10657,8 @@ export default function PVR({
                 </h3>
               </div>
               <div className="space-y-3">
-               
-      
+
+
 
                 {/* Debit Note / Credit Note Buttons */}
                 <div className="space-y-1">
@@ -10676,13 +10700,12 @@ export default function PVR({
                               );
                             }}
                             disabled={isCreditNoteApplicable}
-                            className={`group relative px-3 py-2 text-xs font-medium rounded-md transition-all duration-200 ${
-                              isCreditNoteApplicable
+                            className={`group relative px-3 py-2 text-xs font-medium rounded-md transition-all duration-200 ${isCreditNoteApplicable
                                 ? "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200"
                                 : activeNoteType === "debit"
                                   ? "bg-gradient-to-br from-purple-600 to-purple-700 text-white shadow-sm shadow-purple-200"
                                   : "text-gray-700 bg-white border border-gray-200 hover:border-purple-300 hover:bg-purple-50"
-                            }`}
+                              }`}
                           >
                             <div className="flex items-center justify-center gap-1">
                               <span>Debit Note</span>
@@ -10704,13 +10727,12 @@ export default function PVR({
                               );
                             }}
                             disabled={isDebitNoteApplicable}
-                            className={`group relative px-3 py-2 text-xs font-medium rounded-md transition-all duration-200 ${
-                              isDebitNoteApplicable
+                            className={`group relative px-3 py-2 text-xs font-medium rounded-md transition-all duration-200 ${isDebitNoteApplicable
                                 ? "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200"
                                 : activeNoteType === "credit"
                                   ? "bg-gradient-to-br from-purple-600 to-purple-700 text-white shadow-sm shadow-purple-200"
                                   : "text-gray-700 bg-white border border-gray-200 hover:border-purple-300 hover:bg-purple-50"
-                            }`}
+                              }`}
                           >
                             <div className="flex items-center justify-center gap-1">
                               <span>Credit Note</span>
@@ -10720,7 +10742,7 @@ export default function PVR({
                       );
                     })()}
                   </div>
-                </div> 
+                </div>
 
                 {/* Debit Note / Credit Note Details */}
                 <div
@@ -10747,22 +10769,22 @@ export default function PVR({
                         const mainAmount =
                           activeNoteType && noteValue
                             ? parseFloat(
-                                noteValue
-                                  .replace(/\./g, "")
-                                  .replace(/,/g, "."),
-                              ) || 0
+                              noteValue
+                                .replace(/\./g, "")
+                                .replace(/,/g, "."),
+                            ) || 0
                             : 0;
                         const additionalAmount = (
                           noteDetailsPerDoc[
-                            editingDocument?.id
+                          editingDocument?.id
                           ] || []
                         ).reduce((sum, detail) => {
                           const amount = detail.noteValue
                             ? parseFloat(
-                                detail.noteValue
-                                  .replace(/\./g, "")
-                                  .replace(/,/g, "."),
-                              ) || 0
+                              detail.noteValue
+                                .replace(/\./g, "")
+                                .replace(/,/g, "."),
+                            ) || 0
                             : 0;
                           return sum + amount;
                         }, 0);
@@ -10771,7 +10793,7 @@ export default function PVR({
                         const noteCount =
                           (
                             noteDetailsPerDoc[
-                              editingDocument?.id
+                            editingDocument?.id
                             ] || []
                           ).length + (activeNoteType ? 1 : 0);
 
@@ -11158,9 +11180,9 @@ export default function PVR({
                               ).map((d) =>
                                 d.id === detail.id
                                   ? {
-                                      ...d,
-                                      noteValue: formatted,
-                                    }
+                                    ...d,
+                                    noteValue: formatted,
+                                  }
                                   : d,
                               ),
                             });
@@ -11209,9 +11231,9 @@ export default function PVR({
                                 ).map((d) =>
                                   d.id === detail.id
                                     ? {
-                                        ...d,
-                                        accountCode: value,
-                                      }
+                                      ...d,
+                                      accountCode: value,
+                                    }
                                     : d,
                                 ),
                               });
@@ -11272,9 +11294,9 @@ export default function PVR({
                                 ).map((d) =>
                                   d.id === detail.id
                                     ? {
-                                        ...d,
-                                        departmentCode: value,
-                                      }
+                                      ...d,
+                                      departmentCode: value,
+                                    }
                                     : d,
                                 ),
                               });
@@ -11335,9 +11357,9 @@ export default function PVR({
                             ).map((d) =>
                               d.id === detail.id
                                 ? {
-                                    ...d,
-                                    description: e.target.value,
-                                  }
+                                  ...d,
+                                  description: e.target.value,
+                                }
                                 : d,
                             ),
                           });
@@ -11382,8 +11404,8 @@ export default function PVR({
               className="grid gap-3"
               style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr" }}
             >
-              
-              
+
+
 
               {/* INPUT Discount */}
               <div className="space-y-1">
@@ -11396,28 +11418,28 @@ export default function PVR({
                     const mainAmount =
                       noteValue
                         ? parseFloat(
-                            noteValue
-                              .replace(/\./g, "")
-                              .replace(/,/g, "."),
-                          ) || 0
+                          noteValue
+                            .replace(/\./g, "")
+                            .replace(/,/g, "."),
+                        ) || 0
                         : 0;
                     const additionalAmount = (
                       noteDetailsPerDoc[
-                        editingDocument?.id
+                      editingDocument?.id
                       ] || []
                     ).reduce((sum, detail) => {
                       const amount = detail.noteValue
                         ? parseFloat(
-                            detail.noteValue
-                              .replace(/\./g, "")
-                              .replace(/,/g, "."),
-                          ) || 0
+                          detail.noteValue
+                            .replace(/\./g, "")
+                            .replace(/,/g, "."),
+                        ) || 0
                         : 0;
                       return sum + amount;
                     }, 0);
                     const totalAmount =
                       mainAmount + additionalAmount;
-                    
+
                     return totalAmount > 0 ? formatNumber(totalAmount) : "-";
                   })()}
                   disabled
@@ -11425,7 +11447,7 @@ export default function PVR({
                 />
               </div>
 
-            
+
             </div>
           </div>
 
@@ -11542,10 +11564,10 @@ export default function PVR({
                 const mainNoteAmount =
                   noteValue
                     ? parseFloat(
-                        noteValue
-                          .replace(/\./g, "")
-                          .replace(/,/g, "."),
-                      ) || 0
+                      noteValue
+                        .replace(/\./g, "")
+                        .replace(/,/g, "."),
+                    ) || 0
                     : 0;
 
                 const additionalNotesAmount = (
@@ -11553,10 +11575,10 @@ export default function PVR({
                 ).reduce((sum, detail) => {
                   const amount = detail.noteValue
                     ? parseFloat(
-                        detail.noteValue
-                          .replace(/\./g, "")
-                          .replace(/,/g, "."),
-                      ) || 0
+                      detail.noteValue
+                        .replace(/\./g, "")
+                        .replace(/,/g, "."),
+                    ) || 0
                     : 0;
                   return sum + amount;
                 }, 0);
@@ -11586,7 +11608,7 @@ export default function PVR({
                   mainNoteAmount + additionalNotesAmount;
 
                 // Always save to localStorage with document-specific key
-                const docStorageKey = `pvr_edit_doc_${editingDocument?.id}`;
+                const docStorageKey = `pv_edit_doc_${editingDocument?.id}`;
                 const dataToSave = {
                   amountPaid: amountPaid.map((item) => ({
                     ...item,
@@ -11612,7 +11634,7 @@ export default function PVR({
                 // Trigger table refresh to show updated data
                 setTableRefreshTrigger((prev) => prev + 1);
 
-            
+
                 // Auto-close dialog immediately
                 setShowEditDocumentDialog(false);
               }}
@@ -11677,16 +11699,16 @@ export default function PVR({
             {/* Selected Documents */}
             <div className="space-y-2">
               <h3 className="text-sm font-semibold text-gray-900">
-                Selected Documents ({selectedPVRsForSubmit.length})
+                Selected Documents ({selectedPVsForSubmit.length})
               </h3>
               <div className="border border-gray-200 rounded-lg divide-y max-h-[300px] overflow-y-auto">
-                {pvrData
-                  .filter((pvr) =>
-                    selectedPVRsForSubmit.includes(pvr.id),
+                {pvData
+                  .filter((pv) =>
+                    selectedPVsForSubmit.includes(pv.id),
                   )
-                  .map((pvr) => (
+                  .map((pv) => (
                     <div
-                      key={pvr.id}
+                      key={pv.id}
                       className="p-3 bg-white hover:bg-gray-50 transition-colors"
                     >
                       <div className="flex items-center justify-between gap-4">
@@ -11696,19 +11718,19 @@ export default function PVR({
                               variant="outline"
                               className="text-xs"
                             >
-                              {pvr.pt}
+                              {pv.pt}
                             </Badge>
                             <span className="text-sm font-medium text-purple-700">
-                              {pvr.pvrNo}
+                              {pv.pvNo}
                             </span>
                           </div>
                           <div className="text-sm text-gray-600">
-                            {pvr.supplierName}
+                            {pv.supplierName}
                           </div>
                         </div>
                         <div className="text-sm font-medium text-gray-900 whitespace-nowrap">
-                          {pvr.currency}{" "}
-                          {formatNumber(pvr.totalInvoice)}
+                          {pv.currency}{" "}
+                          {formatNumber(pv.totalInvoice)}
                         </div>
                       </div>
                     </div>
@@ -11727,15 +11749,15 @@ export default function PVR({
             </Button>
             <Button
               onClick={() => {
-                const updatedData = pvrData.map((pvr) =>
-                  selectedPVRsForSubmit.includes(pvr.id)
-                    ? { ...pvr, isSubmitted: true }
-                    : pvr,
+                const updatedData = pvData.map((pv) =>
+                  selectedPVsForSubmit.includes(pv.id)
+                    ? { ...pv, isSubmitted: true }
+                    : pv,
                 );
-                setPvrData(updatedData);
+                setPvData(updatedData);
                 setShowSubmitSummaryDialog(false);
                 setShowSubmitDialog(false);
-                setSelectedPVRsForSubmit([]);
+                setSelectedPVsForSubmit([]);
                 setSubmitTo("AP");
                 setPicName("");
                 setSubmitDate("");
@@ -11749,1224 +11771,6 @@ export default function PVR({
         </DialogContent>
       </Dialog>
 
-    {/* Create New PV Dialog */}
-      <Dialog
-        open={showCreateDialog}
-        onOpenChange={(open: boolean) => {
-          setShowCreateDialog(open);
-          if (!open) {
-            resetForm();
-            setLinkedPIs([]);
-            setShowSupplierDropdown(false);
-            setSupplierSearchTerm("");
-          }
-        }}
-      >
-        <DialogContent className="w-[1600px] h-[800px] flex flex-col overflow-hidden">
-          <DialogHeader className="flex-shrink-0">
-            <DialogTitle className="text-purple-900">
-              Create New PV
-            </DialogTitle>
-            <DialogDescription>
-              Fill in the details to create a new Payment
-              Voucher
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col h-full">
-            {/* Scrollable Content */}
-            <div className="flex-1 overflow-y-auto space-y-4 pr-4">
-              {/* Header Information Grid - Row 1 */}
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                {/* Supplier Name */}
-                <div className="space-y-2 relative">
-                  <div className="text-xs text-purple-600 mb-1">
-                    Supplier Name{" "}
-                    <span className="text-red-500">*</span>
-                  </div>
-                  <Input
-                    value={pvrForm.supplierName}
-                    onChange={(e) => {
-                      setPvrForm({
-                        ...pvrForm,
-                        supplierName: e.target.value,
-                      });
-                      setSupplierSearchTerm(e.target.value);
-                    }}
-                    onClick={() =>
-                      setShowSupplierDropdown(true)
-                    }
-                    onBlur={() =>
-                      setShowSupplierDropdown(false)
-                    }
-                    placeholder="Type to search..."
-                  />
-                  {showSupplierDropdown &&
-                    filteredSuppliers.length > 0 && (
-                      <Card className="absolute z-50 w-full mt-1 max-h-60 overflow-y-auto shadow-lg">
-                        {filteredSuppliers.map((supplier: any) => (
-                          <button
-                            key={supplier.supplierName || supplier.name}
-                            className="w-full text-left px-4 py-2 hover:bg-purple-50 transition-colors border-b last:border-b-0"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              handleSupplierChange(
-                                supplier.supplierName || supplier.name,
-                              );
-                            }}
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                            }}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span>{supplier.supplierName || supplier.name}</span>
-                              {(supplier.category || supplier.supplierCategory) && (
-                                <Badge
-                                  variant="outline"
-                                  className={
-                                    (supplier.category || supplier.supplierCategory) ===
-                                    "OVERSEAS"
-                                      ? "border-purple-200 text-purple-700"
-                                      : "border-blue-200 text-blue-700"
-                                  }
-                                >
-                                  {supplier.category || supplier.supplierCategory}
-                                </Badge>
-                              )}
-                            </div>
-                          </button>
-                        ))}
-                      </Card>
-                    )}
-                </div>
-
-                {/* Term */}
-                <div className="space-y-2">
-                  <div className="text-xs text-purple-600 mb-1">
-                    Term <span className="text-red-500">*</span>
-                  </div>
-                  <Select
-                    value={pvrForm.term}
-                    onValueChange={(value: any) =>
-                      setPvrForm({ ...pvrForm, term: value })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Credit">
-                        Credit
-                      </SelectItem>
-                      <SelectItem value="Urgent">
-                        Urgent
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Currency */}
-                <div className="space-y-2">
-                  <div className="text-xs text-purple-600 mb-1">
-                    Currency{" "}
-                    <span className="text-red-500">*</span>
-                  </div>
-                  <Select
-                    value={pvrForm.currency}
-                    onValueChange={(value: string) =>
-                      setPvrForm({
-                        ...pvrForm,
-                        currency: value,
-                      })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="IDR">IDR</SelectItem>
-                      <SelectItem value="USD">USD</SelectItem>
-                      <SelectItem value="EUR">EUR</SelectItem>
-                      <SelectItem value="SGD">SGD</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Rate */}
-                <div className="space-y-2">
-                  <div className="text-xs text-purple-600 mb-1">
-                    Rate
-                  </div>
-                  <Input
-                    type="text"
-                    value={formatNumber(pvrForm?.rate || 0)}
-                    onChange={(e) => {
-                      // Don't allow typing if cursor is at the rightmost position (end of field)
-                      if (
-                        e.target.selectionStart ===
-                        e.target.value.length
-                      ) {
-                        return;
-                      }
-
-                      const parsed = parseFloat(
-                        e.target.value
-                          .replace(/\./g, "")
-                          .replace(/,/g, "."),
-                      );
-                      let newRate = isNaN(parsed) ? 0 : parsed;
-
-                      const formatted = formatNumber(newRate);
-                      const integerPart =
-                        formatted.split(",")[0];
-                      if (integerPart.length > 6) {
-                        return;
-                      }
-
-                      setPvrForm({
-                        ...pvrForm,
-                        rate: newRate,
-                      });
-
-                      const commaIndex = formatted.indexOf(",");
-                      if (commaIndex > -1) {
-                        requestAnimationFrame(() => {
-                          (
-                            e.target as HTMLInputElement
-                          ).setSelectionRange(
-                            commaIndex,
-                            commaIndex,
-                          );
-                        });
-                      }
-                    }}
-                    onFocus={(e) => {
-                      const val = e.target.value;
-                      const commaIndex = val.indexOf(",");
-                      if (commaIndex > -1) {
-                        e.target.setSelectionRange(
-                          0,
-                          commaIndex,
-                        );
-                      } else {
-                        e.target.select();
-                      }
-                    }}
-                    placeholder="1,00"
-                    className="mt-1"
-                  />
-                </div>
-
-                {/* Company */}
-                <div className="space-y-2">
-                  <div className="text-xs text-purple-600 mb-1">
-                    Company{" "}
-                    <span className="text-red-500">*</span>
-                  </div>
-                  <Select
-                    value={pvrForm.pt}
-                    onValueChange={(value: any) => {
-                      setPvrForm({
-                        ...pvrForm,
-                        pt: value,
-                        pvrNo: generatePVRNumber(
-                          value,
-                          pvrForm.pvrDate,
-                        ),
-                      });
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="AMT">AMT</SelectItem>
-                      <SelectItem value="GMI">GMI</SelectItem>
-                      <SelectItem value="IMI">IMI</SelectItem>
-                      <SelectItem value="MJS">MJS</SelectItem>
-                      <SelectItem value="TTP">TTP</SelectItem>
-                      <SelectItem value="WNS">WNS</SelectItem>
-                      <SelectItem value="WSI">WSI</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              {/* Header Information Grid - Row 2 */}
-              <div
-                className="grid gap-4 w-full"
-                style={{
-                  gridTemplateColumns: "10% 20% 10% 60%",
-                }}
-              >
-                {/* PV Date */}
-                <div className="space-y-2 w-full">
-                  <div className="text-xs text-purple-600 mb-1">
-                    PV Date{" "}
-                    <span className="text-red-500">*</span>
-                  </div>
-                  <Popover
-                    open={showCreateDatePicker}
-                    onOpenChange={setShowCreateDatePicker}
-                  >
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className="w-full justify-start text-left font-normal"
-                      >
-                        {pvrForm.pvrDate || "Pick a date"}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent
-                      align="start"
-                      className="w-auto p-4 space-y-3"
-                    >
-                      {/* Manual Date Input */}
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium text-gray-600">
-                          Ketik Tanggal (DD/MM/YYYY)
-                        </label>
-                        <Input
-                          type="text"
-                          placeholder="DD/MM/YYYY"
-                          value={pvrForm.pvrDate || ""}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            // Allow only numbers and slashes
-                            const filtered = value.replace(
-                              /[^0-9/]/g,
-                              "",
-                            );
-                            // Auto-format as user types
-                            let formatted = filtered;
-                            if (
-                              filtered.length >= 2 &&
-                              !filtered.includes("/")
-                            ) {
-                              formatted =
-                                filtered.slice(0, 2) +
-                                "/" +
-                                filtered.slice(2);
-                            }
-                            if (
-                              filtered.length >= 4 &&
-                              filtered.split("/").length === 2
-                            ) {
-                              const parts =
-                                formatted.split("/");
-                              formatted =
-                                parts[0] +
-                                "/" +
-                                parts[1].slice(0, 2) +
-                                "/" +
-                                parts[1].slice(2);
-                            }
-                            const newDate = formatted.slice(
-                              0,
-                              10,
-                            );
-                            setPvrForm({
-                              ...pvrForm,
-                              pvrDate: newDate,
-                              pvrNo: generatePVRNumber(
-                                pvrForm.pt,
-                                newDate,
-                              ),
-                            });
-                          }}
-                          className="text-sm"
-                        />
-                      </div>
-
-                      {/* Today Button */}
-                      <Button
-                        onClick={() => {
-                          const today = new Date();
-                          const day = String(
-                            today.getDate(),
-                          ).padStart(2, "0");
-                          const month = String(
-                            today.getMonth() + 1,
-                          ).padStart(2, "0");
-                          const year = today.getFullYear();
-                          const dateStr = `${year}-${month}-${day}`;
-                          const formatted =
-                            formatDateToDDMMYYYY(dateStr);
-                          setPvrForm({
-                            ...pvrForm,
-                            pvrDate: formatted,
-                            pvrNo: generatePVRNumber(
-                              pvrForm.pt,
-                              formatted,
-                            ),
-                          });
-                          setShowCreateDatePicker(false);
-                        }}
-                        variant="outline"
-                        className="w-full text-sm bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200"
-                      >
-                        Today's Date
-                      </Button>
-
-                      {/* Calendar */}
-                      <div className="border-t pt-3">
-                        <CalendarComponent
-                          mode="single"
-                          selected={
-                            pvrForm.pvrDate
-                              ? (() => {
-                                  const parts =
-                                    pvrForm.pvrDate.split("/");
-                                  if (
-                                    parts.length === 3 &&
-                                    parts[0].length === 2 &&
-                                    parts[1].length === 2 &&
-                                    parts[2].length === 4
-                                  ) {
-                                    return new Date(
-                                      parseInt(parts[2]),
-                                      parseInt(parts[1]) - 1,
-                                      parseInt(parts[0]),
-                                    );
-                                  }
-                                  return undefined;
-                                })()
-                              : undefined
-                          }
-                          onSelect={(date: Date | undefined) => {
-                            if (date) {
-                              const day = String(
-                                date.getDate(),
-                              ).padStart(2, "0");
-                              const month = String(
-                                date.getMonth() + 1,
-                              ).padStart(2, "0");
-                              const year = date.getFullYear();
-                              const dateStr = `${year}-${month}-${day}`;
-                              const formatted =
-                                formatDateToDDMMYYYY(dateStr);
-                              setPvrForm({
-                                ...pvrForm,
-                                pvrDate: formatted,
-                                pvrNo: generatePVRNumber(
-                                  pvrForm.pt,
-                                  formatted,
-                                ),
-                              });
-                              setShowCreateDatePicker(false);
-                            }
-                          }}
-                        />
-                      </div>
-                    </PopoverContent>
-                  </Popover>
-                </div>
-
-                {/* Bank Account */}
-                <div className="space-y-2 w-full">
-                  <div className="text-xs text-purple-600 mb-1">
-                    Bank Account{" "}
-                    <span className="text-red-500">*</span>
-                  </div>
-                  <Select
-                    value={pvrForm.bankAccount || ""}
-                    onValueChange={(value: string) =>
-                      setPvrForm({
-                        ...pvrForm,
-                        bankAccount: value,
-                      })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select bank account..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                       <SelectItem value="KAS SEMENTARA">
-                        KAS SEMENTARA
-                      </SelectItem>
-                      <SelectItem value="BCA-MJS-001">
-                        BCA-MJS-001
-                      </SelectItem>
-                      <SelectItem value="MANDIRI-WNS-001">
-                        MANDIRI-WNS-001
-                      </SelectItem>
-                      <SelectItem value="CIMB-WNS-001">
-                        CIMB-WNS-001
-                      </SelectItem>
-                      <SelectItem value="BNI-AMT-001">
-                        BNI-AMT-001
-                      </SelectItem>
-                      <SelectItem value="CIMB-GMI-001">
-                        CIMB-GMI-001
-                      </SelectItem>
-                      <SelectItem value="BCA-WSI-001">
-                        BCA-WSI-001
-                      </SelectItem>
-                      <SelectItem value="MANDIRI-TTP-001">
-                        MANDIRI-TTP-001
-                      </SelectItem>
-                      <SelectItem value="BNI-IMI-001">
-                        BNI-IMI-001
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Payment Method */}
-                <div className="space-y-2 w-full">
-                  <div className="text-xs text-purple-600 mb-1">
-                    Payment Method{" "}
-                    <span className="text-red-500">*</span>
-                  </div>
-                  <Select
-                    value={pvrForm.paymentMethod}
-                    onValueChange={(value: any) =>
-                      setPvrForm({
-                        ...pvrForm,
-                        paymentMethod: value,
-                      })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Transfer">
-                        Transfer
-                      </SelectItem>
-                      <SelectItem value="Cash">Cash</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Reference */}
-                <div className="space-y-2 w-full">
-                  <div className="text-xs text-purple-600 mb-1">
-                    Reference
-                  </div>
-                  <Input
-                    value={pvrForm.reference || ""}
-                    onChange={(e) =>
-                      setPvrForm({
-                        ...pvrForm,
-                        reference: e.target.value,
-                      })
-                    }
-                  />
-                </div>
-              </div>
-
-              {/* Payable Items Table */}
-              <div className="mt-6">
-                <div className="mb-3 flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-purple-900">
-                    Payable Items
-                  </h3>
-                  <Button
-                    onClick={() => setShowAddLinksDialog(true)}
-                    className="bg-purple-600 hover:bg-purple-700 text-white text-xs h-8 px-3 flex items-center gap-1"
-                    disabled={!pvrForm.supplierName}
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    Add PVR
-
-                  </Button>
-                </div>
-                <div className="border border-gray-200 rounded-xl overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-purple-50 sticky top-0 z-10">
-                      <tr className="h-12">
-                         <th
-                          className="text-purple-900 text-xs text-left px-4 py-2 font-medium border-b"
-                          style={{ width: "25%", minWidth: "220px" }}
-                        >
-                          PVR No
-                        </th>
-                        <th
-                          className="text-purple-900 text-xs text-left px-4 py-2 font-medium border-b"
-                          style={{ width: "15%", minWidth: "150px" }}
-                        >
-                          Doc Type
-                        </th>
-                        <th
-                          className="text-purple-900 text-xs text-left px-4 py-2 font-medium border-b"
-                          style={{ width: "25%", minWidth: "250px" }}
-                        >
-                          Doc No
-                        </th>
-                   
-                        <th
-                          className="text-purple-900 text-xs text-left px-4 py-2 font-medium border-b"
-                          style={{ width: "9%", minWidth: "120px" }}
-                        >
-                          Item Total
-                        </th>
-                        <th
-                          className="text-purple-900 text-xs text-left px-4 py-2 font-medium border-b"
-                          style={{ width: "9%", minWidth: "120px" }}
-                        >
-                          Amount Paid
-                        </th>
-                        <th
-                          className="text-purple-900 text-xs text-left px-4 py-2 font-medium border-b"
-                          style={{ width: "9%", minWidth: "100px" }}
-                        >
-                          Discount
-                        </th>
-                        <th
-                          className="text-purple-900 text-xs text-left px-4 py-2 font-medium border-b"
-                          style={{ width: "9%", minWidth: "120px" }}
-                        >
-                          Outstanding
-                        </th>
-                        <th
-                          className="text-purple-900 text-xs text-center px-4 py-2 font-medium border-b"
-                          style={{ width: "9%", minWidth: "80px" }}
-                        >
-                          Action
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(() => {
-                        const addDays = (
-                          dateStr: string,
-                          days: number,
-                        ) => {
-                          const parts = dateStr.split("/");
-                          const isoDateStr = `${parts[2]}-${parts[1]}-${parts[0]}`;
-                          const date = new Date(isoDateStr);
-                          date.setDate(date.getDate() + days);
-                          return formatDateToDDMMYYYY(
-                            date.toISOString().split("T")[0],
-                          );
-                        };
-
-                        return linkedPIs.length > 0 ? (
-                          linkedPIs.map((pi) => {
-                            const docType =
-                              pi.documentType || "PI";
-                            const getDocTypeLabel = (
-                              type: string,
-                            ) => {
-                              switch (type) {
-                                case "PI":
-                                  return "Purchase Invoice";
-                                case "IC":
-                                  return "Import Cost";
-                                case "SR":
-                                  return "Shipment Request";
-                                case "EN":
-                                  return "AP Note";
-                                case "PR":
-                                  return "Purchase Return";
-                                default:
-                                  return type;
-                              }
-                            };
-
-                            return (
-                              <tr
-                                key={`${pi.id}-${tableRefreshTrigger}`}
-                                className="border-b hover:bg-purple-50"
-                              >
-                                <td className="px-4 py-3 text-sm">
-                                  {pi.pvrNo || "-"}
-                                </td>
-                                <td className="px-4 py-3 text-sm">
-                                  {getDocTypeLabel(docType)}
-                                </td>
-                                <td className="px-4 py-3 text-sm">
-                                  {getDocumentNumber(pi)}
-                                </td>
-                              
-                               
-                                <td className="px-4 py-3 text-sm">
-                                  {formatNumber(pi.totalAmount)}
-                                </td>
-                                <td className="px-4 py-3 text-sm">
-                                  {editingAmountPaidId === pi.id ? (
-                                    <div className="flex gap-1 items-center min-w-0">
-                                      <input
-                                        type="text"
-                                        placeholder="0,00"
-                                        value={formatNumber(
-                                          parseFloat(
-                                            editingAmountPaidValue
-                                              .replace(/\./g, "")
-                                              .replace(/,/g, "."),
-                                          ) || 0,
-                                        )}
-                                        onChange={(e) => {
-                                          const parsed = parseFloat(
-                                            e.target.value
-                                              .replace(/\./g, "")
-                                              .replace(/,/g, "."  ),
-                                          );
-                                          let newValue = isNaN(parsed)
-                                            ? 0
-                                            : parsed;
-
-                                          const formatted =
-                                            formatNumber(newValue);
-                                          const integerPart =
-                                            formatted.split(",")[0];
-                                          if (integerPart.length > 13) {
-                                            return;
-                                          }
-
-                                          setEditingAmountPaidValue(formatted);
-
-                                          const commaIndex =
-                                            formatted.indexOf(",");
-                                          if (commaIndex > -1) {
-                                            requestAnimationFrame(() => {
-                                              (e.target as HTMLInputElement).setSelectionRange(
-                                                commaIndex,
-                                                commaIndex,
-                                              );
-                                            });
-                                          }
-                                        }}
-                                        onFocus={(e) => {
-                                          const val = e.target.value;
-                                          const commaIndex = val.indexOf(",");
-                                          if (commaIndex > -1) {
-                                            e.target.setSelectionRange(
-                                              0,
-                                              commaIndex,
-                                            );
-                                          } else {
-                                            e.target.select();
-                                          }
-                                        }}
-                                        onKeyDown={(e) => {
-                                          if (e.key === 'Enter') {
-                                            const docStorageKey = `pvr_edit_doc_${pi.id}`;
-                                            const savedData = localStorage.getItem(docStorageKey);
-                                            const parsedData = savedData ? JSON.parse(savedData) : {};
-                                            parsedData.amountPaid = [{ id: Date.now().toString(), amount: editingAmountPaidValue }];
-                                            parsedData.savedAt = new Date().toISOString();
-                                            localStorage.setItem(docStorageKey, JSON.stringify(parsedData));
-                                            setEditingAmountPaidId(null);
-                                            setEditingAmountPaidValue('');
-                                            setTableRefreshTrigger(prev => prev + 1);
-                                          } else if (e.key === 'Escape') {
-                                            setEditingAmountPaidId(null);
-                                            setEditingAmountPaidValue('');
-                                          }
-                                        }}
-                                        className="flex-1 min-w-0 h-8 text-sm border border-purple-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                                        autoFocus
-                                      />
-                                      <Button
-                                        onClick={() => {
-                                          const docStorageKey = `pvr_edit_doc_${pi.id}`;
-                                          const savedData = localStorage.getItem(docStorageKey);
-                                          const parsedData = savedData ? JSON.parse(savedData) : {};
-                                          parsedData.amountPaid = [{ id: Date.now().toString(), amount: editingAmountPaidValue }];
-                                          parsedData.savedAt = new Date().toISOString();
-                                          localStorage.setItem(docStorageKey, JSON.stringify(parsedData));
-                                          setEditingAmountPaidId(null);
-                                          setEditingAmountPaidValue('');
-                                          setTableRefreshTrigger(prev => prev + 1);
-                                        }}
-                                        size="sm"
-                                        className="flex-shrink-0 bg-green-600 hover:bg-green-700 h-8 px-2"
-                                      >
-                                        <Check className="w-3 h-3" />
-                                      </Button>
-                                    </div>
-                                  ) : (
-                                    <button
-                                      onClick={() => {
-                                        const docStorageKey = `pvr_edit_doc_${pi.id}`;
-                                        const savedData = localStorage.getItem(docStorageKey);
-                                        let currentValue = formatNumber(pi.totalAmount);
-                                        if (savedData) {
-                                          try {
-                                            const parsed = JSON.parse(savedData);
-                                            if (parsed.amountPaid && Array.isArray(parsed.amountPaid) && parsed.amountPaid.length > 0) {
-                                              currentValue = parsed.amountPaid[0].amount;
-                                            }
-                                          } catch {}
-                                        }
-                                        setEditingAmountPaidId(pi.id);
-                                        setEditingAmountPaidValue(currentValue);
-                                      }}
-                                      className="text-sm text-gray-900 hover:text-gray-700 cursor-pointer font-normal flex items-center gap-1"
-                                      title="Click to edit"
-                                    >
-                                      {(() => {
-                                        const docStorageKey = `pvr_edit_doc_${pi.id}`;
-                                        const savedData = localStorage.getItem(docStorageKey);
-                                        if (savedData) {
-                                          try {
-                                            const parsed = JSON.parse(savedData);
-                                            if (parsed.amountPaid && Array.isArray(parsed.amountPaid) && parsed.amountPaid.length > 0) {
-                                              return parsed.amountPaid[0].amount;
-                                            }
-                                          } catch {}
-                                        }
-                                        return formatNumber(pi.totalAmount);
-                                      })()}
-                                      <Edit className="w-3 h-3 flex-shrink-0" />
-                                    </button>
-                                  )}
-                                </td>
-                                <td className="px-4 py-3 text-sm">
-                                  {editingDiscountId === pi.id ? (
-                                    <div className="flex gap-1 items-center min-w-0">
-                                      <input
-                                        type="text"
-                                        placeholder="0,00"
-                                        value={formatNumber(
-                                          parseFloat(
-                                            editingDiscountValue
-                                              .replace(/\./g, "")
-                                              .replace(/,/g, "."),
-                                          ) || 0,
-                                        )}
-                                        onChange={(e) => {
-                                          const parsed = parseFloat(
-                                            e.target.value
-                                              .replace(/\./g, "")
-                                              .replace(/,/g, "."),
-                                          );
-                                          let newValue = isNaN(parsed)
-                                            ? 0
-                                            : parsed;
-
-                                          const formatted =
-                                            formatNumber(newValue);
-                                          const integerPart =
-                                            formatted.split(",")[0];
-                                          if (integerPart.length > 13) {
-                                            return;
-                                          }
-
-                                          setEditingDiscountValue(formatted);
-
-                                          const commaIndex =
-                                            formatted.indexOf(",");
-                                          if (commaIndex > -1) {
-                                            requestAnimationFrame(() => {
-                                              (e.target as HTMLInputElement).setSelectionRange(
-                                                commaIndex,
-                                                commaIndex,
-                                              );
-                                            });
-                                          }
-                                        }}
-                                        onFocus={(e) => {
-                                          const val = e.target.value;
-                                          const commaIndex = val.indexOf(",");
-                                          if (commaIndex > -1) {
-                                            e.target.setSelectionRange(
-                                              0,
-                                              commaIndex,
-                                            );
-                                          } else {
-                                            e.target.select();
-                                          }
-                                        }}
-                                        onKeyDown={(e) => {
-                                          if (e.key === 'Enter') {
-                                            const docStorageKey = `pvr_edit_doc_${pi.id}`;
-                                            const savedData = localStorage.getItem(docStorageKey);
-                                            const parsedData = savedData ? JSON.parse(savedData) : {};
-                                            parsedData.discount = editingDiscountValue;
-                                            parsedData.savedAt = new Date().toISOString();
-                                            localStorage.setItem(docStorageKey, JSON.stringify(parsedData));
-                                            setEditingDiscountId(null);
-                                            setEditingDiscountValue('');
-                                            setTableRefreshTrigger(prev => prev + 1);
-                                          } else if (e.key === 'Escape') {
-                                            setEditingDiscountId(null);
-                                            setEditingDiscountValue('');
-                                          }
-                                        }}
-                                        className="flex-1 min-w-0 h-8 text-sm border border-purple-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                                        autoFocus
-                                      />
-                                      <Button
-                                        onClick={() => {
-                                          const docStorageKey = `pvr_edit_doc_${pi.id}`;
-                                          const savedData = localStorage.getItem(docStorageKey);
-                                          const parsedData = savedData ? JSON.parse(savedData) : {};
-                                          parsedData.discount = editingDiscountValue;
-                                          parsedData.savedAt = new Date().toISOString();
-                                          localStorage.setItem(docStorageKey, JSON.stringify(parsedData));
-                                          setEditingDiscountId(null);
-                                          setEditingDiscountValue('');
-                                          setTableRefreshTrigger(prev => prev + 1);
-                                        }}
-                                        size="sm"
-                                        className="flex-shrink-0 bg-green-600 hover:bg-green-700 h-8 px-2"
-                                      >
-                                        <Check className="w-3 h-3" />
-                                      </Button>
-                                    </div>
-                                  ) : (
-                                    <button
-                                      onClick={() => {
-                                        const docStorageKey = `pvr_edit_doc_${pi.id}`;
-                                        const savedData = localStorage.getItem(docStorageKey);
-                                        let currentValue = '0';
-                                        if (savedData) {
-                                          try {
-                                            const parsed = JSON.parse(savedData);
-                                            if (parsed.discount) {
-                                              currentValue = parsed.discount;
-                                            }
-                                          } catch {}
-                                        }
-                                        setEditingDiscountId(pi.id);
-                                        setEditingDiscountValue(currentValue);
-                                      }}
-                                      className="text-sm text-gray-900 hover:text-gray-700 cursor-pointer font-normal flex items-center gap-1"
-                                      title="Click to edit"
-                                    >
-                                      {(() => {
-                                        const docStorageKey = `pvr_edit_doc_${pi.id}`;
-                                        const savedData = localStorage.getItem(docStorageKey);
-                                        if (savedData) {
-                                          try {
-                                            const parsed = JSON.parse(savedData);
-                                            if (parsed.discount) {
-                                              return formatNumber(parseFormattedNumber(parsed.discount));
-                                            }
-                                          } catch {}
-                                        }
-                                        return formatNumber(0);
-                                      })()}
-                                      <Edit className="w-3 h-3 flex-shrink-0" />
-                                    </button>
-                                  )}
-                                </td>
-                                {/* Outstanding CELL - CREATE NEW PV */}
-                                <td className="px-4 py-3 text-sm">
-                                  {(() => {
-                                    const docStorageKey = `pvr_edit_doc_${pi.id}`;
-                                    const savedData = localStorage.getItem(docStorageKey);
-                                    let itemTotal = pi.totalAmount;
-                                    let amountPaid = itemTotal;
-                                    
-                                    if (savedData) {
-                                      try {
-                                        const parsed = JSON.parse(savedData);
-                                        if (parsed.amountPaid && Array.isArray(parsed.amountPaid) && parsed.amountPaid.length > 0) {
-                                          amountPaid = parseFormattedNumber(parsed.amountPaid[0].amount);
-                                        }
-                                      } catch {}
-                                    }
-                                    
-                                    const outstanding = itemTotal - amountPaid;
-                                    if (outstanding > 0) {
-                                      return formatNumber(outstanding);
-                                    } else {
-                                      return formatNumber(0);
-                                    }
-                                  })()}
-                                </td>
-                                <td className="px-4 py-3 text-center">
-                                  <button
-                                    onClick={() => {
-                                      setLinkedPIs(
-                                        linkedPIs.filter(
-                                          (item) =>
-                                            item.id !== pi.id,
-                                        ),
-                                      );
-                                    }}
-                                    className="p-1.5 text-red-600 hover:bg-red-100 rounded transition-colors inline-flex"
-                                    title="Delete"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                </td>
-                             </tr>
-                            );
-                          })
-                        ) : (
-                          <tr>
-                            <td
-                              colSpan={7}
-                              className="px-4 py-8 text-center text-gray-500"
-                            >
-                              No payable items
-                            </td>
-                          </tr>
-                        );
-                      })()}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-
-            {/* Fixed Footer */}
-            <div className="flex-shrink-0 border-t border-gray-200 pt-4 px-4 pb-4 space-y-4">
-              {/* Remarks and Financial Summary */}
-              <div className="flex gap-4 items-stretch">
-                {/* Remarks Section */}
-                <div className="w-1/2 flex flex-col">
-                  <Label>Remarks</Label>
-                  <div className="flex-1">
-                    <Textarea
-                      value={pvrForm.remarks || ""}
-                      onChange={(e) =>
-                        setPvrForm({
-                          ...pvrForm,
-                          remarks: e.target.value,
-                        })
-                      }
-                      placeholder="Enter remarks..."
-                      className="flex-1 resize-none" style={{minHeight:'190px'}}
-                    />
-                  </div>
-                </div>
-
-                {/* Financial Summary */}
-                <div className="w-1/2 bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg border border-purple-200 p-4 mt-[14px] mb-3">
-                  <div className="flex-1 flex flex-col justify-between">
-                    {/* Total Amount */}
-                    <div className="flex items-center">
-                      <span className="text-gray-700 text-sm flex-1 font-bold">
-                        Total Amount
-                      </span>
-                      <span className="text-gray-700 text-sm w-12 text-center font-bold">
-                        {pvrForm.currency}
-                      </span>
-                      <span className="text-gray-700 text-sm w-4 text-right"></span>
-                      <span className="text-gray-700 text-sm w-[114px] text-right font-bold">
-                        {(() => {
-                          let totalAmountPaid = 0;
-                          linkedPIs.forEach((pi) => {
-                            const docStorageKey = `pvr_edit_doc_${pi.id}`;
-                            const savedData = localStorage.getItem(docStorageKey);
-                            let amountPaid = pi.totalAmount;
-                            
-                            if (savedData) {
-                              try {
-                                const parsed = JSON.parse(savedData);
-                                if (parsed.amountPaid && Array.isArray(parsed.amountPaid) && parsed.amountPaid.length > 0) {
-                                  amountPaid = parseFormattedNumber(parsed.amountPaid[0].amount);
-                                }
-                              } catch {}
-                            }
-                            totalAmountPaid += amountPaid;
-                          });
-                          // Force recalculation by including tableRefreshTrigger
-                          void tableRefreshTrigger;
-                          return formatNumber(totalAmountPaid);
-                        })()}
-                      </span>
-                      <span className="text-gray-700 text-sm w-4 text-left"></span>
-                    </div>
-
-                    {/* Discount */}
-                    <div className="flex items-center">
-                      <span className="text-gray-700 text-sm flex-1 font-bold">
-                        Discount
-                      </span>
-                      <span className="text-gray-700 text-sm w-12 text-center font-bold">
-                        {pvrForm.currency}
-                      </span>
-                      <span className="text-gray-700 text-sm w-4 text-right"></span>
-                      <span className="text-gray-700 text-sm w-[114px] text-right font-bold">
-                        {(() => {
-                          let totalDiscount = 0;
-                          linkedPIs.forEach((pi) => {
-                            const docStorageKey = `pvr_edit_doc_${pi.id}`;
-                            const savedData = localStorage.getItem(docStorageKey);
-                            if (savedData) {
-                              try {
-                                const parsed = JSON.parse(savedData);
-                                if (parsed.discount) {
-                                  totalDiscount += parseFormattedNumber(parsed.discount);
-                                }
-                              } catch {}
-                            }
-                          });
-                          return formatNumber(totalDiscount);
-                        })()}
-                      </span>
-                      <span className="text-gray-700 text-sm w-4 text-left"></span>
-                    </div>
-
-                   
-
-                    {/* PPN (VAT) */}
-                    <div className="flex items-center">
-                      <span className="text-gray-700 text-sm flex-1 font-bold">
-                        PPN 
-                      </span>
-                      <span className="text-gray-700 text-sm w-12 text-center font-bold">
-                        {pvrForm.currency}
-                      </span>
-                      <span className="text-gray-700 text-sm w-4 text-right"></span>
-                      <span className="text-gray-700 text-sm w-[114px] text-right font-bold">
-                        {formatNumber(0)}
-                      </span>
-                      <span className="text-gray-700 text-sm w-4 text-left"></span>
-                    </div>
-
-                    {/* PPH (Income Tax) */}
-                    <div className="flex items-center">
-                      <span className="text-gray-700 text-sm flex-1 font-bold">
-                        PPH
-                      </span>
-                      <span className="text-gray-700 text-sm w-12 text-center font-bold">
-                        {pvrForm.currency}
-                      </span>
-                      <span className="text-gray-700 text-sm w-4 text-right"></span>
-                      <span className="text-gray-700 text-sm w-[114px] text-right font-bold">
-                        {formatNumber(0)}
-                      </span>
-                      <span className="text-gray-700 text-sm w-4 text-left"></span>
-                    </div>
-
-                    {/* Grand Total */}
-                    <div className="flex items-center border-t border-purple-200 pt-2">
-                      <span className="text-gray-700 text-sm flex-1 font-bold">
-                        Grand Total
-                      </span>
-                      <span className="text-gray-900 text-sm w-12 text-center font-bold">
-                        {pvrForm.currency}
-                      </span>
-                      <span className="text-gray-900 text-sm w-4 text-right"></span>
-                      <span className="text-gray-900 text-sm w-[114px] text-right font-bold">
-                        {(() => {
-                          let totalAmountPaid = 0;
-                          linkedPIs.forEach((pi) => {
-                            const docStorageKey = `pvr_edit_doc_${pi.id}`;
-                            const savedData = localStorage.getItem(docStorageKey);
-                            let amountPaid = pi.totalAmount;
-                            
-                            if (savedData) {
-                              try {
-                                const parsed = JSON.parse(savedData);
-                                if (parsed.amountPaid && Array.isArray(parsed.amountPaid) && parsed.amountPaid.length > 0) {
-                                  amountPaid = parseFormattedNumber(parsed.amountPaid[0].amount);
-                                }
-                              } catch {}
-                            }
-                            totalAmountPaid += amountPaid;
-                          });
-                          
-                          let totalDiscount = 0;
-                          linkedPIs.forEach((pi) => {
-                            const docStorageKey = `pvr_edit_doc_${pi.id}`;
-                            const savedData = localStorage.getItem(docStorageKey);
-                            if (savedData) {
-                              try {
-                                const parsed = JSON.parse(savedData);
-                                if (parsed.discount) {
-                                  totalDiscount += parseFormattedNumber(parsed.discount);
-                                }
-                              } catch {}
-                            }
-                          });
-                          // Force recalculation by including tableRefreshTrigger
-                          void tableRefreshTrigger;
-                          const grandTotal = totalAmountPaid - totalDiscount;
-                          return formatNumber(grandTotal);
-                        })()}
-                      </span>
-                      <span className="text-gray-900 text-sm w-4 text-left"></span>
-                    </div>
-
-                    {/* Total in IDR */}
-                    <div className="flex items-center border-t border-purple-200 pt-2">
-                      <span className="text-gray-700 text-sm flex-1 font-bold">
-                        Grand Total (IDR)
-                      </span>
-                      <span className="text-gray-700 text-sm w-12 text-center font-bold">
-                        IDR
-                      </span>
-                      <span className="text-gray-700 text-sm w-4 text-right"></span>
-                      <span className="text-gray-700 text-sm w-[114px] text-right font-bold">
-                        {(() => {
-                          let totalAmountPaid = 0;
-                          linkedPIs.forEach((pi) => {
-                            const docStorageKey = `pvr_edit_doc_${pi.id}`;
-                            const savedData = localStorage.getItem(docStorageKey);
-                            let amountPaid = pi.totalAmount;
-                            
-                            if (savedData) {
-                              try {
-                                const parsed = JSON.parse(savedData);
-                                if (parsed.amountPaid && Array.isArray(parsed.amountPaid) && parsed.amountPaid.length > 0) {
-                                  amountPaid = parseFormattedNumber(parsed.amountPaid[0].amount);
-                                }
-                              } catch {}
-                            }
-                            totalAmountPaid += amountPaid;
-                          });
-                          
-                          let totalDiscount = 0;
-                          linkedPIs.forEach((pi) => {
-                            const docStorageKey = `pvr_edit_doc_${pi.id}`;
-                            const savedData = localStorage.getItem(docStorageKey);
-                            if (savedData) {
-                              try {
-                                const parsed = JSON.parse(savedData);
-                                if (parsed.discount) {
-                                  totalDiscount += parseFormattedNumber(parsed.discount);
-                                }
-                              } catch {}
-                            }
-                          });
-                          // Force recalculation by including tableRefreshTrigger
-                          void tableRefreshTrigger;
-                          const grandTotal = totalAmountPaid - totalDiscount;
-
-                          const rate = pvrForm.rate;
-                          const finalTotal =
-                            rate && rate > 0
-                              ? grandTotal *
-                                parseFloat(
-                                  String(rate).replace(
-                                    /,/g,
-                                    ".",
-                                  ),
-                                )
-                              : grandTotal;
-
-                          return formatNumber(finalTotal);
-                        })()}
-                      </span>
-                      <span className="text-gray-700 text-sm w-4 text-left"></span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="border-t border-gray-200 pt-3 flex gap-2 justify-end">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setShowCreateDialog(false);
-                    resetForm();
-                  }}
-                  className="text-sm"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleCreatePVR}
-                  className="bg-purple-600 hover:bg-purple-700 text-sm"
-                  disabled={!pvrForm.supplierName}
-                >
-                  Save PV
-                </Button>
-              </div>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
       {/* 2. PV Already Exists Warning Dialog */}
       <Dialog open={showPVExistsDialog} onOpenChange={setShowPVExistsDialog}>
         <DialogContent style={{ maxWidth: "500px" }} >
@@ -12976,7 +11780,7 @@ export default function PVR({
               Information
             </DialogTitle>
             <DialogDescription className="py-2 text-gray-700">
-              This Payment Voucher Request has already been fully paid.
+              This Payment Voucher has already been fully paid.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -12986,6 +11790,33 @@ export default function PVR({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Submit Warning Dialog */}
+      <Dialog open={showSubmitWarningDialog} onOpenChange={setShowSubmitWarningDialog}>
+        <DialogContent style={{ maxWidth: "500px" }} >
+          <DialogHeader>
+            <DialogTitle className="text-purple-900 flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-orange-500" />
+              Warning
+            </DialogTitle>
+            <DialogDescription className="py-2 text-gray-700">
+              Haven't received document, can't do approve
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button onClick={() => setShowSubmitWarningDialog(false)} className="bg-purple-600 hover:bg-purple-700 text-white w-full">
+              OK
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+
+
+
+
+
+
+

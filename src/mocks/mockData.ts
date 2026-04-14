@@ -113,6 +113,7 @@ export const mockPurchaseOrder = [
     poStatus: "Complete",
     createdBy: "Buyer C",
     createDate: "18/10/2025",
+    approvalDate: "20/10/2025",
     vendorOrigin: "Local",
     poType: "Credit",
     deliveryType: "Direct Import",
@@ -295,7 +296,7 @@ export const mockPurchaseOrder = [
     purchaseOrderNo: "I.PO/IMI.MDN/2511/0032",
     supplierName: "PT Karya Abadi",
     ptCompany: "IMI",
-    poStatus: "Complete",
+    poStatus: "Outstanding",
     createdBy: "Buyer A",
     createDate: "01/01/2026",
     vendorOrigin: "Overseas",
@@ -309,14 +310,7 @@ export const mockPurchaseOrder = [
     history: [],
     items: [],
     linkedDocs: [
-      {
-        type: "Purchase Invoice",
-        docNo: "STID638410244",
-      },
-      {
-        type: "Import Cost",
-        docNo: "IMP/IMI/2511/0051",
-      },
+
     ],
   },
   {
@@ -632,6 +626,56 @@ export const mockPurchaseOrder = [
     ],
     
   },
+   {
+    poId: "po_015",
+    purchaseOrderNo: "PO/GMI.MDN/2601/0314",
+    supplierName: "PT Winner Technology",
+    ptCompany: "GMI",
+    poStatus: "Outstanding",
+    createdBy: "Buyer B",
+    createDate: "18/10/2025",
+    vendorOrigin: "Local",
+    poType: "Credit",
+    deliveryType: "Borongan",
+    totalAmount: 30000,
+    otherTotal: 0,
+    currency: "IDR",
+    otherCosts: [
+     
+    ],
+    grandTotal: 30000,
+    internalRemarks: "",
+    history: [],
+    items: [
+       {
+        id: "item-1",
+       itemCode: "AL-002",
+        itemName: "Annual Calibration",
+        description: "Aluminum Ingots Premium Grade",
+        quantity: 1,
+        pricePerQty: 30000,
+        totalAmount: 30000,
+        uom: "KG",
+        toBeUsedBy: "TB.Medelin Dini",
+        reqBy: "TB. Medelin Dini",
+        prNumber: "PR-2025-002",
+        purpose: "Manufacturing",
+        
+      },
+      
+    ],
+    linkedDocs: [
+      {
+        id: "reim_001",
+        documentNo: "REIM/GMI.MDN/2602/0314",
+        documentType: "Reimburse Without PO",
+        date: "20/02/2026",
+        status: "COMPLETE",
+        amount: 3445900,
+      },
+    ],
+    
+  },
 ];
 
 // {
@@ -730,6 +774,14 @@ export const mockpurchaseInvoice = [
       {
         type: "AP Note",
         docNo: "AP/MJS.MDN/2510/0145",
+      },
+      {
+        type: "Purchase Return",
+        docNo: "PR/MJS.D0/2601/0001",
+      },
+      {
+        type: "Payment Voucher",
+        docNo: "PV/MJS.MDN/2510/0110",
       },
     ],
     history: [
@@ -1038,47 +1090,7 @@ export const mockpurchaseInvoice = [
     history: [],
     linkedDocs: [],
   },
-  {
-    piId: "pi_008",
-    purchaseInvoiceNo: "STID638410244",
-    noPO: "I.PO/IMI.MDN/2511/0032",
-    poId: "po_008",
-    supplierName: "PT Karya Abadi",
-    ptCompany: "IMI",
-    warehouse: "MEDAN",
-    totalAmount: 100000,
-    otherTotal: 0,
-    grandTotal: 100000,
-    downPayment: 100000,
-    currency: "IDR",
-    outstanding: 0,
- 
-    internalRemarks:
-      "Documents received but validation pending",
-    items: [
-      {
-        id: "item-1",
-        description: "Industrial Materials",
-        quantity: 1,
-        pricePerQty: 100000,
-        totalAmount: 100000,
-        returned: 0,
-      },
-    ],
-    checkStatus: false,
-    receivedStatus: false,
-    pendingStatus: false,
-    status: "NOT_VERIFIED",
-    submissionStatus: "NOT_SUBMITTED",
-    submittedTo: "",
-    submissionDate: null,
-    documentType: "",
-    picPI: "VANNESA",
-    docReceivedDate: null,
-  
-    history: [],
-    linkedDocs: [],
-  },
+
   {
     piId: "pi_009",
     purchaseInvoiceNo: "STID638410266",
@@ -2188,7 +2200,7 @@ export const mockExpenseNote = [
     apNoteNo: "AP/IMI.MDN/2512/0004",
     apNoteType: "MDN",
     docType: "AP NOTE",
-    invoiceNumber: "INV-2025-0145",
+    invoiceNumber: "INV-2025-0146",
     supplierName: "PT Maju Jaya",
     supplierCategory: "LOCAL",
     docReceiptDate: "15/10/2025",
@@ -2244,7 +2256,7 @@ export const mockExpenseNote = [
     apNoteNo: "AP/IMI.MDN/2511/0121",
     apNoteType: "MDN",
     docType: "AP NOTE",
-    invoiceNumber: "INV-2025-0145",
+    invoiceNumber: "INV-2025-0147",
     supplierName: "PT Maju Jaya",
     supplierCategory: "LOCAL",
     docReceiptDate: "15/10/2025",
@@ -2301,7 +2313,7 @@ export const mockExpenseNote = [
     apNoteNo: "AP/IMI.MDN/2512/0018",
     apNoteType: "MDN",
     docType: "AP NOTE",
-    invoiceNumber: "INV-2025-0145",
+    invoiceNumber: "INV-2025-0148",
     supplierName: "PT Maju Jaya",
     supplierCategory: "LOCAL",
     docReceiptDate: "15/10/2025",
@@ -2355,6 +2367,53 @@ export const mockExpenseNote = [
       { type: "Import Cost", docNo: "IMP/IMI/2511/0044" },
     ],
   },
+];
+
+// REIMBURSE WITHOUT PO
+export const mockReimburseWithoutPO = [
+  {
+    reimId: "reim_001",
+    reimburseNo: "REIM/GMI.MDN/2602/0314",
+    supplier: "PT Winner Technology",
+    supplierName: "Ardian Aprianto",
+    ptCompany: "GMI",
+    status: "OUTSTANDING",
+    createdBy: "Admin A",
+    createDate: "20/02/2026",
+    vendorOrigin: "Local",
+    reimburseType: "Credit",
+    grandTotal: 3445900,
+    approvedBy: "Manager A",
+    linkedDocs: [
+      {
+        id: "po_015",
+        documentNo: "PO/GMI.MDN/2601/0314",
+        documentType: "Purchase Order",
+        date: "18/10/2025",
+        status: "Outstanding",
+        amount: 30000,
+      },
+    ],
+    items: [
+      {
+        airlineTicketPayment: "Ardian Aprianto",
+        departureDate: "20/02/2026",
+        destination: "Balikpapan (BPN)",
+        purpose: "Annual Calibration On Board MT. Tanker Victory",
+        spkPoWoNo: "PO/GMI.MDN/2602/0314",
+        amount: 1585500,
+      },
+      {
+        airlineTicketPayment: "Ardian Aprianto",
+        departureDate: "25/02/2026",
+        destination: "Jakarta (CGK)",
+        purpose: "Annual Calibration On Board MT. Tanker Victory",
+        spkPoWoNo: "PO/GMI.MDN/2602/0314",
+        amount: 1860400,
+      }
+    ]
+  },
+
 ];
 
 // PO COLLAPSIBLE ITEMS - from mockPurchaseOrder[0]
@@ -2502,25 +2561,25 @@ export const mockSupplierMasterData = [
   {
     name: "PT Maju Jaya",
     category: "LOCAL",
-    isApproved: true,
+    
     availablePIs: [],
   },
   {
     name: "CV Berkah Sentosa",
     category: "LOCAL",
-    isApproved: true,
+    
     availablePIs: [],
   },
   {
     name: "PT Indo Supplies",
     category: "OVERSEAS",
-    isApproved: false,
+    
     availablePIs: [],
   },
   {
     name: "PT Karya Abadi",
     category: "LOCAL",
-    isApproved: true,
+    
     availablePIs: [],
   },
 ];
@@ -2628,6 +2687,141 @@ export const mockPVR = [
     id: "pvr-003",
     pvrid: "pvr-003",
     pvrNo: "PVR/MJS.MDN/2511/0005",
+    pvrDate: "2026-01-15",
+    docReceiptDate: "2026-01-14",
+    term: "CREDIT",
+    supplierName: "PT Karya Abadi",
+    supplierCategory: "LOCAL",
+    currency: "IDR",
+    paymentMethod: "Transfer",
+    remarks: "Shipment request payment",
+    poNumber: "PO/MJS.MDN/2511/0122",
+    totalPVR: 0,
+    createdBy: "SHEFANNY",
+    pt: "MJS",
+    bankAccount: "BCA-MJS-001",
+    method: "Transfer",
+    reference: "PV26-0002",
+    rate: 1,
+    linkedDocs: [
+   
+      {
+        id: "ld-006",
+        documentType: "SR",
+        piNo: "0233/XI/SR-MJS/D2/2025",
+        poNo: "PO/MJS.MDN/2511/0122",
+        invoiceNo: "STID638419982",
+        invoiceDate: "2025-11-01",
+        currency: "IDR",
+        totalAmount: 40064,
+      },
+    ],
+  },
+];
+
+// PAYMENT VOUCHER VER 2
+export const mockPV2 = [
+  {
+    id: "pv2-001",
+    pvrid: "pv2-001",
+    pvrNo: "PV/MJS.MDN/2510/0100",
+    pvrDate: "2025-10-16",
+    docReceiptDate: "2025-10-15",
+    term: "CREDIT",
+    supplierName: "PT Maju Jaya",
+    supplierCategory: "LOCAL",
+    currency: "IDR",
+    paymentMethod: "Transfer",
+    remarks:
+      "Payment for raw materials - steel and aluminum ingots",
+    poNumber: "PO/MJS.MDN/2510/8472",
+    totalPVR: 0,
+    createdBy: "SHEFANNY",
+    pt: "MJS",
+    bankAccount: "BCA-MJS-001",
+    method: "Transfer",
+    reference: "PV25-0001",
+    rate: 1,  
+    linkedDocs: [
+      {
+        id: "ld-001",
+        documentType: "PI",
+        piNo: "STID734821056",
+        poNo: "PO/MJS.MDN/2510/8472",
+        invoiceNo: "STID734821056",
+        invoiceDate: "2025-10-15",
+        currency: "IDR",
+        totalAmount: 3065000,
+      },
+      {
+        id: "ld-002",
+        documentType: "PO",
+        poNo: "PO/MJS.MDN/2510/8472",
+        piNo: "STID734821056",
+        invoiceDate: "2025-10-15",
+        currency: "IDR",
+        totalAmount: 3065000,
+      }, 
+        {
+        id: "ld-003",
+        documentType: "PI",
+        poNo: "PO/MJS.MDN/2510/0472",
+        piNo: "STID734821555",
+        invoiceDate: "2025-10-15",
+        currency: "IDR",
+        totalAmount: 85000,
+      },
+      {
+        id: "ld-004",
+        documentType: "PO",
+        poNo: "PO/MJS.MDN/2510/0472",
+        piNo: "STID734821555",
+        invoiceDate: "2025-10-15",
+        currency: "IDR",
+        totalAmount: 85000,
+      },
+    
+     
+    ],
+  },
+  {
+    id: "pv2-002",
+    pvrid: "pv2-002",
+    pvrNo: "PV/IMI.MDN/2511/0001",
+    pvrDate: "2026-01-10",
+    docReceiptDate: "2026-01-09",
+    term: "URGENT",
+    supplierName: "PT Karya Abadi",
+    supplierCategory: "LOCAL",
+    currency: "EUR",
+    paymentMethod: "Transfer",
+    remarks: "Import cost payment - Air shipment",
+    poNumber: "I.PO/IMI.MDN/2511/0052",
+    totalPVR: 0,
+    createdBy: "ANDI WIJAYA",
+    pt: "IMI",
+    bankAccount: "BCA-IMI-001",
+    method: "Transfer",
+    reference: "PV26-0001",
+    rate: 1,
+    linkedDocs: [
+    
+      {
+        id: "ld-004",
+        documentType: "IC",
+        piNo: "IMP/IMI/2511/0071",
+        poNo: "I.PO/IMI.MDN/2511/0052",
+        invoiceNo: "IMP/IMI/2511/0071",
+        invoiceDate: "2026-01-02",
+        currency: "EUR",
+        totalAmount: 8.9,
+      },
+    ],
+  },
+  {
+    id: "pv2-003",
+    pvrid: "pv2-003",
+    pvrNo: "PV/MJS.MDN/2511/0005",
     pvrDate: "2026-01-15",
     docReceiptDate: "2026-01-14",
     term: "CREDIT",
@@ -3533,4 +3727,91 @@ export const initializeMockPVRData = () => {
     return [];
   }
 };
+
+// INVOICE RECEIPT
+export const mockInvoiceReceipts = [
+  {
+    id: "IR-001",
+    invoiceReceiptNo: "IR/MJS.MDN/2601/0042",
+    linkedPurchaseInvoiceNo: "STID734821056",
+    linkedPONo: "PO/MJS.MDN/2510/8472",
+    supplierName: "PT Maju Jaya",
+    ptCompany: "MJS",
+    warehouse: "MEDAN",
+    createDate: "15/01/2026",
+    totalAmount: 3035000,
+    discount: 0,
+    ppn: 0,
+    pph: 0,
+    otherCost: 0,
+    grandTotal: 3065000,
+    downPayment: 3065000,
+    outstanding: 0,
+    currency: "IDR",
+    remarks: "All documents verified",
+    status: "COMPLETE",
+    linkedDocs: [
+      { type: "Purchase Invoice", docNo: "STID734821056", badgeLabel: "PI", badgeColor: "blue" },
+    ],
+    items: [
+      { itemCode: "SVC-001", itemName: "Service Liferaft", description: "Service Liferaft", pph: true, qty: 1, uom: "Unit", discount: 0, pricePerQty: 3000000, total: 3000000, itemReturned: "-" },
+      { itemCode: "AL-002", itemName: "Aluminum Ingots Premium Grade", description: "Aluminum Ingots Premium Grade", pph: false, qty: 1, uom: "KG", discount: 0, pricePerQty: 35000, total: 35000, itemReturned: "-" },
+    ],
+  },
+  {
+    id: "IR-002",
+    invoiceReceiptNo: "IR/AMT.MDN/2601/0067",
+    linkedPurchaseInvoiceNo: "STIE425738169",
+    linkedPONo: "PO/AMT.MDN/2510/6892",
+    supplierName: "CV Berkah Sentosa",
+    ptCompany: "AMT",
+    warehouse: "MEDAN",
+    createDate: "18/01/2026",
+    totalAmount: 1000000,
+    discount: 0,
+    ppn: 0,
+    pph: 0,
+    otherCost: 0,
+    grandTotal: 1000000,
+    downPayment: 0,
+    outstanding: 1000000,
+    currency: "IDR",
+    remarks: "",
+    status: "COMPLETE",
+    linkedDocs: [
+      { type: "Purchase Invoice", docNo: "STIE425738169", badgeLabel: "PI", badgeColor: "blue" },
+    ],
+    items: [
+      { itemCode: "FAS-001", itemName: "Fasteners Mixed", description: "Fasteners Mixed", pph: false, qty: 1, uom: "BOX", discount: 0, pricePerQty: 1000000, total: 1000000, itemReturned: "-" },
+    ],
+  },
+  {
+    id: "IR-003",
+    invoiceReceiptNo: "IR/WNS.MDN/2602/0015",
+    linkedPurchaseInvoiceNo: "STIC639417582",
+    linkedPONo: "PO/WNS.MDN/2510/7258",
+    supplierName: "PT Karya Abadi",
+    ptCompany: "WNS",
+    warehouse: "MEDAN",
+    createDate: "03/02/2026",
+    totalAmount: 95000000,
+    discount: 0,
+    ppn: 0,
+    pph: 0,
+    otherCost: 0,
+    grandTotal: 95000000,
+    downPayment: 47500000,
+    outstanding: 47500000,
+    currency: "IDR",
+    remarks: "Documents received but validation pending",
+    status: "COMPLETE",
+    linkedDocs: [
+      { type: "Purchase Invoice", docNo: "STIC639417582", badgeLabel: "PI", badgeColor: "blue" },
+      { type: "Payment Voucher", docNo: "PV/WNS.MDN/2510/0055", badgeLabel: "PV", badgeColor: "green" },
+    ],
+    items: [
+      { itemCode: "IND-001", itemName: "Industrial Materials", description: "Industrial Materials", pph: false, qty: 200, uom: "TON", discount: 0, pricePerQty: 475000, total: 95000000, itemReturned: "-" },
+    ],
+  },
+];
 

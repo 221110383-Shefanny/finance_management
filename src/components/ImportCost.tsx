@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
+import { DocumentMonitoringDialog } from "./DocumentMonitoringDialog";  
 import {
   formatDateToDDMMYYYY as formatDate,
   getTodayDDMMYYYY,
@@ -65,6 +66,7 @@ import {
   Filter,
   Pencil,
   FilePlus,
+  Weight,
 } from "lucide-react";
 import { Input } from "./ui/input";
 import {
@@ -300,6 +302,71 @@ export default function ImportCost({
   onNavigateToPVR,
   selectedICNo,
 }: ImportCostProps = {}) {
+  // Define PO array outside return for use in randomValues
+  const poArray = [
+    {
+      poKey: "po-1",
+      poNo: "PO-2025-001",
+      itemCode: "ITM-001",
+      itemName: "Electronic Components",
+      poDate: "2025-01-15",
+    },
+    {
+      poKey: "po-2",
+      poNo: "PO-2025-002",
+      itemCode: "ITM-002",
+      itemName: "Mechanical Parts",
+      poDate: "2025-01-18",
+    },
+    {
+      poKey: "po-3",
+      poNo: "PO-2025-003",
+      itemCode: "ITM-003",
+      itemName: "Raw Materials",
+      poDate: "2025-01-20",
+    },
+    {
+      poKey: "po-4",
+      poNo: "PO-2025-004",
+      itemCode: "ITM-004",
+      itemName: "Packaging Materials",
+      poDate: "2025-01-22",
+    },
+    {
+      poKey: "po-5",
+      poNo: "PO-2025-005",
+      itemCode: "ITM-005",
+      itemName: "Testing Equipment",
+      poDate: "2025-01-25",
+    },
+  ];
+
+  // Define expenses array for Details tab and totalAmount calculation
+  const expenses = [
+    {
+      costVendor: "Freight Forwarder A",
+      poNumber: "PO-2025-001",
+      amount: 45000000,
+      payTo: "PT Logistik Prima",
+    },
+    {
+      costVendor: "Customs Broker",
+      poNumber: "PO-2025-002",
+      amount: 35000000,
+      payTo: "PT Bea Cukai Services",
+    },
+  ];
+
+  // Generate random values based on PO array length
+  const randomValues = useMemo(() => {
+    return poArray.map(() => ({
+      cbm: (Math.random() * 10).toFixed(2),
+      weight: (Math.random() * 1000).toFixed(0),
+      box: Math.floor(Math.random() * 100) + 1,
+      charges: Math.random() * 10000,
+    }));
+  }, []);
+
   // Load import cost data from localStorage on mount
   // Initialize with empty array - will load data in useEffect
   const [view, setView] = useState<"dashboard" | "work">(
@@ -308,6 +375,7 @@ export default function ImportCost({
   const [importCostData, setImportCostData] = useState<
     ImportCostData[]
   >([]);
+  const [showPOMonitoringDialog, setShowPOMonitoringDialog] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [companyFilter, setCompanyFilter] =
     useState<PTType>("ALL PT");
@@ -433,6 +501,7 @@ export default function ImportCost({
     poNo: "",
     invoiceNo: "",
   });
+
 
   // New AP Note Dialog States and Refs
   const mainDialogContentRef = useRef<HTMLDivElement>(null);
@@ -2536,6 +2605,18 @@ export default function ImportCost({
                           PVR
                         </Button>
 
+                        {/* Monitoring button */}
+                        <Button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedDetail(item);
+                            setShowPOMonitoringDialog(true);
+                          }}
+                          className="bg-purple-600 hover:bg-purple-700"
+                        >
+                          <Receipt className="w-4 h-4 mr-2" />
+                          Monitoring
+                        </Button>
 
                         {/* Void Button - Always show for all status */}
                         <Button
@@ -3012,6 +3093,7 @@ export default function ImportCost({
         open={showDetailDialog}
         onOpenChange={setShowDetailDialog}
       >
+        
         <DialogContent
           className="w-[1600px] h-[800px]  flex flex-col overflow-hidden"
           hideCloseButton
@@ -3124,31 +3206,14 @@ export default function ImportCost({
                   >
                     Remarks
                   </button>
-                  <button
-                    onClick={() =>
-                      setActiveDetailTab("history")
-                    }
-                    className={`px-4 py-2 text-sm font-medium ${
-                      activeDetailTab === "history"
-                        ? "text-purple-700 border-b-2 border-purple-600 bg-purple-50"
-                        : "text-gray-500 hover:text-purple-700 hover:bg-purple-50"
-                    }`}
-                  >
-                    Activity Log
-                  </button>
+                
                 </div>
                 {activeDetailTab === "items" && (
                   <div className="flex items-center gap-2 pr-4">
                     <button
                       onClick={() => {
-                        const allPoKeys = new Set([
-                          "po-1",
-                          "po-2",
-                          "po-3",
-                          "po-4",
-                          "po-5",
-                        ]);
-                        if (expandedDetailItems.size === 5) {
+                        const allPoKeys = new Set(poArray.map(po => po.poKey));
+                        if (expandedDetailItems.size === poArray.length) {
                           setExpandedDetailItems(new Set());
                         } else {
                           setExpandedDetailItems(allPoKeys);
@@ -3156,7 +3221,7 @@ export default function ImportCost({
                       }}
                       className="px-3 py-1 text-xs font-medium text-white bg-purple-600 hover:bg-purple-700 border border-purple-600 rounded transition-colors"
                     >
-                      {expandedDetailItems.size === 5
+                      {expandedDetailItems.size === poArray.length
                         ? "Collapse All"
                         : "Expand All"}
                     </button>
@@ -3226,43 +3291,7 @@ export default function ImportCost({
 
                       <tbody>
                         {/* 5 PO Rows */}
-                        {[
-                          {
-                            poKey: "po-1",
-                            poNo: "PO-2025-001",
-                            itemCode: "ITM-001",
-                            itemName: "Electronic Components",
-                            poDate: "2025-01-15",
-                          },
-                          {
-                            poKey: "po-2",
-                            poNo: "PO-2025-002",
-                            itemCode: "ITM-002",
-                            itemName: "Mechanical Parts",
-                            poDate: "2025-01-18",
-                          },
-                          {
-                            poKey: "po-3",
-                            poNo: "PO-2025-003",
-                            itemCode: "ITM-003",
-                            itemName: "Raw Materials",
-                            poDate: "2025-01-20",
-                          },
-                          {
-                            poKey: "po-4",
-                            poNo: "PO-2025-004",
-                            itemCode: "ITM-004",
-                            itemName: "Packaging Materials",
-                            poDate: "2025-01-22",
-                          },
-                          {
-                            poKey: "po-5",
-                            poNo: "PO-2025-005",
-                            itemCode: "ITM-005",
-                            itemName: "Testing Equipment",
-                            poDate: "2025-01-25",
-                          },
-                        ].map((po) => (
+                        {poArray.map((po, index) => (
                           <AnimatePresence key={po.poKey}>
                             {/* Main PO Row */}
                             <tr
@@ -3338,25 +3367,17 @@ export default function ImportCost({
                                   {po.poDate}
                                 </td>
                                 <td className="text-xs px-4 py-2">
-                                  {(Math.random() * 10).toFixed(
-                                    2,
-                                  )}{" "}
-                                  m³
+                                 {randomValues[index].cbm} m³
                                 </td>
                                 <td className="text-xs px-4 py-2">
-                                  {(
-                                    Math.random() * 1000
-                                  ).toFixed(0)}{" "}
-                                  kg
+                                  {randomValues[index].weight} kg
                                 </td>
                                 <td className="text-xs px-4 py-2">
-                                  {Math.floor(
-                                    Math.random() * 100,
-                                  ) + 1}
+                                  {randomValues[index].box}
                                 </td>
                                 <td className="text-xs px-4 py-2">
                                   {formatCurrency(
-                                    Math.random() * 10000,
+                                    randomValues[index].charges,
                                   )}
                                 </td>
                               </motion.tr>
@@ -3396,22 +3417,7 @@ export default function ImportCost({
                             </tr>
                           </thead>
                           <tbody>
-                            {[
-                              {
-                                costVendor:
-                                  "Freight Forwarder A",
-                                poNumber: "PO-2025-001",
-                                amount: 45000000,
-                                payTo: "PT Logistik Prima",
-                              },
-                              {
-                                costVendor: "Customs Broker",
-                                poNumber: "PO-2025-002",
-                                amount: 35000000,
-                                payTo: "PT Bea Cukai Services",
-                              },
-                           
-                            ].map((expense, index) => (
+                            {expenses.map((expense, index) => (
                               <tr
                                 key={index}
                                 className="border-b border-gray-100 hover:bg-purple-50/50 transition-colors"
@@ -3550,22 +3556,7 @@ export default function ImportCost({
 
               <div className="flex-shrink-0 border-t border-gray-200 pt-4 px-6 pb-4 space-y-4 bg-white">
                 {(() => {
-                  const totalAmount =
-                    selectedDetail?.items &&
-                    selectedDetail.items.length > 0
-                      ? selectedDetail.items.reduce(
-                          (sum, item) =>
-                            sum + (item.totalAmount || 0),
-                          0,
-                        )
-                      : selectedDetail?.linkedDocs &&
-                          selectedDetail.linkedDocs.length > 0
-                        ? selectedDetail.linkedDocs.reduce(
-                            (sum, doc) =>
-                              sum + (doc.totalAmount || 0),
-                            0,
-                          )
-                        : 0;
+                  const totalAmount = expenses.reduce((sum, expense) => sum + expense.amount, 0);
 
                   const totalOtherCost = otherCosts.reduce(
                     (sum, cost) => sum + (cost.costAmount || 0),
@@ -3743,6 +3734,14 @@ export default function ImportCost({
 
               {/* Action Buttons */}
               <div className="flex justify-end gap-3">
+                {/* Developer Note*/} 
+                  <p className="mt-2 text-xs text-red-500 italic"> 
+                    Note for Developer : 
+                    <br />
+                    Total Amount : Details Tab - sum all the amount row
+                    <br />  
+                    PO Number : Format tolong ganti sesuai Ascend
+                  </p>
                 <Button
                   variant="outline"
                   onClick={() => setShowDetailDialog(false)}
@@ -8717,6 +8716,21 @@ export default function ImportCost({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* Document Monitoring Dialog */}
+<DocumentMonitoringDialog
+  open={showPOMonitoringDialog}
+  onOpenChange={setShowPOMonitoringDialog}
+  po={mockPurchaseOrder?.find((po: any) => po.purchaseOrderNo === selectedDetail?.poNo) || { purchaseOrderNo: selectedDetail?.poNo }}
+  mockItems={selectedDetail?.items || []}
+  isPOCreated={(poNumber: string) => mockPurchaseOrder?.some((po: any) => po.purchaseOrderNo === poNumber) || false}
+  getEffectivePOStatus={(po: any, items: any[]) => po?.status || "Draft"}
+  formatDateToDDMMYYYY={formatDateToDDMMYYYY}
+  piNumber={selectedDetail?.linkedDocs?.find((d: any) => d.type === "Purchase Invoice")?.docNo || selectedDetail?.invoiceNo || ""}
+  icNumber={selectedDetail?.icNum || ""}
+  formatCurrency={formatCurrency}
+  initialActiveStep="ic"
+  initialDocumentType="overseas"
+/>
     </>
   );
 }

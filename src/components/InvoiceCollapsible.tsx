@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { formatDateToDDMMYYYY } from "../utils/dateFormat";
+import { DocumentMonitoringDialog } from "./DocumentMonitoringDialog";
 import {
   FileText,
   ChevronDown,
@@ -54,6 +55,7 @@ import {
   getSyncedPaymentAmounts,
   getSyncedPaymentAmountsByPO,
   findLinkedPVsByPINo,
+  mockInvoiceReceipts,
 } from "../mocks/mockData";
 import { Button } from "./ui/button";
 import { Separator } from "./ui/separator";
@@ -512,6 +514,7 @@ export function InvoiceCollapsible({
   const [showAttachmentUploadDialog, setShowAttachmentUploadDialog] = useState(false);
   const [showUploadAttachmentDialog, setShowUploadAttachmentDialog] = useState(false);
   const [expandOtherCostsSection, setExpandOtherCostsSection] = useState(true);
+  const [showPOMonitoringDialog, setShowPOMonitoringDialog] = useState(false);
   const [otherCosts, setOtherCosts] = useState<Array<{ id: string; costAmount: number; description: string }>>(
     invoice.otherCosts || []
   );
@@ -525,6 +528,7 @@ export function InvoiceCollapsible({
   const [selectedDocType, setSelectedDocType] = useState<"AP Note" | "AP DISC NOTE" | "">("" as any);
   const [savedAPNoteNo, setSavedAPNoteNo] = useState("");
   const [apNotes, setApNotes] = useState<any[]>([]);
+  const [invoiceReceipts, setInvoiceReceipts] = useState<any[]>([]);
   const [accountItems, setAccountItems] = useState<any[]>([]);
   const [linkedDocs, setLinkedDocs] = useState<any[]>([]);
   const [apNoteForm, setApNoteForm] = useState({
@@ -789,6 +793,32 @@ export function InvoiceCollapsible({
       window.removeEventListener("storage", handleStorageChange);
       window.removeEventListener("expenseNoteCreated", handleExpenseNoteCreated);
       window.removeEventListener("storageUpdated", handleStorageUpdated);
+    };
+  }, [invoice.purchaseInvoiceNo]);
+
+  // Load Invoice Receipts from localStorage
+  useEffect(() => {
+    const loadInvoiceReceipts = () => {
+      try {
+        const saved = JSON.parse(localStorage.getItem("invoiceReceipts") || "[]");
+        const allIR = [...mockInvoiceReceipts, ...saved];
+        const linked = allIR.filter((ir: any) =>
+          ir.linkedPurchaseInvoiceNo === invoice.purchaseInvoiceNo ||
+          ir.linkedDocs?.some((doc: any) => doc.docNo === invoice.purchaseInvoiceNo)
+        );
+        setInvoiceReceipts(linked);
+      } catch { setInvoiceReceipts([]); }
+    };
+    loadInvoiceReceipts();
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === "invoiceReceipts") loadInvoiceReceipts();
+    };
+    const handleIRCreated = () => loadInvoiceReceipts();
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener("invoiceReceiptCreated", handleIRCreated);
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("invoiceReceiptCreated", handleIRCreated);
     };
   }, [invoice.purchaseInvoiceNo]);
 
@@ -1988,6 +2018,21 @@ console.log("[PVR DIALOG] About to open dialog with final states:");
                   </span>
                 </Button>
 
+                {/* Invoice Receipt Button */}
+                <Button
+                  onClick={(e: React.MouseEvent) => {
+                    e.stopPropagation();
+                    window.dispatchEvent(new CustomEvent("navigateToInvoiceReceipt", { detail: { irNo: null } }));
+                    window.dispatchEvent(new CustomEvent("changeTab", { detail: { tab: "INVOICE RECEIPT" } }));
+                  }}
+                  className="bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-500/30 min-w-[120px] justify-start"
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  <span className="flex-1 text-center">
+                    Invoice Receipt
+                  </span>
+                </Button>
+
                 {/* Attachment Button */}
                 <Button
                   onClick={(e: React.MouseEvent) => {
@@ -2016,13 +2061,17 @@ console.log("[PVR DIALOG] About to open dialog with final states:");
                   </span>
                 </Button>
 
-            
-
-                
-
-    
-
-
+                {/* Monitoring button */}
+                <Button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowPOMonitoringDialog(true);
+                  }}
+                  className="bg-purple-600 hover:bg-purple-700"
+                >
+                  <Receipt className="w-4 h-4 mr-2" />
+                  Monitoring
+                </Button>
 
                 <Button
                   onClick={(e: React.MouseEvent) => {
@@ -2061,7 +2110,7 @@ console.log("[PVR DIALOG] About to open dialog with final states:");
               <div className="flex flex-row gap-6">
 
                 {/* Left Side: Invoice & PO Details */}
-                <div className="flex flex-row items-center gap-6 overflow-x-auto pb-1 w-full">
+                <div className="flex flex-row items-center gap-6  pb-1 w-full">
                   <div className="flex-1">
                     <div className="text-xs text-purple-600 mb-1">Purchase Invoice No</div>
                     <div className="font-semibold text-purple-900 text-sm whitespace-nowrap">
@@ -2097,7 +2146,7 @@ console.log("[PVR DIALOG] About to open dialog with final states:");
                 </div>
 
                 {/* Right Side: Payment Cards */}
-                <div className="flex flex-row items-center gap-4 overflow-x-auto pb-1 w-full">
+                <div className="flex flex-row items-center gap-4 pb-1 w-full">
                   {/* Down Payment Card */}
                   <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-3 border border-blue-200 shadow-sm flex items-center gap-3 flex-1 min-w-[200px]">
                     <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center flex-shrink-0">
@@ -2169,17 +2218,7 @@ console.log("[PVR DIALOG] About to open dialog with final states:");
                   Items
                 </button>
 
-                <button
-                  onClick={() =>
-                    setActiveDetailTab("ActivityLog")
-                  }
-                  className={`px-4 py-2 text-sm font-medium ${activeDetailTab === "ActivityLog"
-                    ? "text-purple-700 border-b-2 border-purple-600 bg-purple-50"
-                    : "text-gray-500 hover:text-purple-700 hover:bg-purple-50"
-                    }`}
-                >
-                  Activity Log
-                </button>
+               
               </div>
             </div>
 
@@ -2674,7 +2713,7 @@ console.log("[PVR DIALOG] About to open dialog with final states:");
       >
         <DialogContent className="w-fit">
           <DialogHeader>
-            <DialogTitle className="text-purple-900 flex items-center gap-2">
+            <DialogTitle className="text  -purple-900 flex items-center gap-2">
               Linked Documents
               <Badge
                 variant="outline"
@@ -2763,7 +2802,7 @@ console.log("[PVR DIALOG] About to open dialog with final states:");
                 onClick={() => {
                   const event = new CustomEvent(
                     "navigateToPurchaseOrder",
-                    { detail: { docNo: po.purchaseOrderNo } },
+                    { detail: { poNo: po.purchaseOrderNo } },
                   );
                   window.dispatchEvent(event);
                   setShowLinkedDocsDialog(false);
@@ -2817,7 +2856,7 @@ console.log("[PVR DIALOG] About to open dialog with final states:");
                         // Dispatch event for global navigation
                         const event = new CustomEvent(
                           "navigateToPurchaseOrder",
-                          { detail: { docNo } },
+                          { detail: { poNo: docNo } },
                         );
                         window.dispatchEvent(event);
 
@@ -2931,7 +2970,7 @@ console.log("[PVR DIALOG] About to open dialog with final states:");
                         // Dispatch event for global navigation
                         const event = new CustomEvent(
                           "navigateToPurchaseOrder",
-                          { detail: { docNo } },
+                          { detail: { poNo: docNo } },
                         );
                         window.dispatchEvent(event);
 
@@ -3336,9 +3375,37 @@ console.log("[PVR DIALOG] About to open dialog with final states:");
               );
             })()}
 
+            {/* LINKED INVOICE RECEIPTS SECTION */}
+            {invoiceReceipts.length > 0 && (
+              <>
+                {invoiceReceipts.map((ir: any, idx: number) => (
+                  <div
+                    key={`ir-${idx}`}
+                    className="p-4 bg-white border border-orange-200 rounded-lg hover:shadow-md transition-shadow cursor-pointer hover:bg-orange-50"
+                    onClick={() => {
+                      setShowLinkedDocsDialog(false);
+                      window.dispatchEvent(new CustomEvent("navigateToInvoiceReceipt", { detail: { irNo: ir.invoiceReceiptNo } }));
+                    }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <Receipt className="w-5 h-5 text-orange-600" />
+                        <div>
+                          <p className="text-orange-700 font-medium">{ir.invoiceReceiptNo}</p>
+                          <p className="text-sm text-gray-500">Invoice Receipt</p>
+                        </div>
+                      </div>
+                      <Badge className="bg-orange-600 text-white">IR</Badge>
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
+
             {/* Show message only if NO documents exist at all */}
             {(!po || !po.purchaseOrderNo) &&
               (!apNotes || apNotes.length === 0) &&
+              invoiceReceipts.length === 0 &&
               (() => {
                 const linkedPRs = mockpurchaseReturns.filter(
                   (pr: any) => pr.poNo === po?.purchaseOrderNo,
@@ -7160,7 +7227,7 @@ console.log("[PVR DIALOG] About to open dialog with final states:");
                     onClick={() => {
                       setShowPVRLinkedWarning(false);
                     }}
-                    className="bg-purple-600 hover:bg-purple-700 text-white w-full"
+                    className="bg-purple-600 hover:bg-purple-700 text-white w-full" 
                   >
                     OK
                   </Button>
@@ -8959,6 +9026,21 @@ console.log("[PVR DIALOG] About to open dialog with final states:");
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+            {/* Document Monitoring Dialog */}
+      <DocumentMonitoringDialog
+        open={showPOMonitoringDialog}
+        onOpenChange={setShowPOMonitoringDialog}
+        po={mockPurchaseOrder?.find((po: any) => po.purchaseOrderNo === invoice.noPO) || { poNumber: invoice.noPO }}
+        mockItems={mockItems}
+        isPOCreated={(poNumber: string) => mockPurchaseOrder?.some((po: any) => po.purchaseOrderNo === poNumber) || false}
+        getEffectivePOStatus={(po: any, items: any[]) => po?.status || "Draft"}
+        formatDateToDDMMYYYY={formatDateToDDMMYYYY}
+        piNumber={invoice.purchaseInvoiceNo}
+        formatCurrency={formatCurrency}
+        initialActiveStep="pi"
+      />
+
 
     </motion.div>
   );

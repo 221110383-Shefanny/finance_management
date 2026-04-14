@@ -6,6 +6,7 @@ import { Badge } from "./ui/badge";
 import { Card } from "./ui/card";
 import { Input } from "./ui/input";
 import { Checkbox } from "./ui/checkbox";
+import { DocumentMonitoringDialog } from "./DocumentMonitoringDialog";
 import {
     Select,
     SelectContent,
@@ -39,7 +40,7 @@ import { Textarea } from "./ui/textarea";
 import { InvoiceCollapsible } from "./InvoiceCollapsible";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
 import { FolderList } from "./FolderList";
-import { mockpurchaseReturns, mockDivisionPICs } from "../mocks/mockData";
+import { mockpurchaseReturns, mockDivisionPICs, mockPurchaseOrder } from "../mocks/mockData";
 
 // Type definitions
 type DocumentType = "QPF" | "REIMBURSEMENT" | "BUNKER / FRESH WATER" | "CREDIT" | "DOWN PAYMENT";
@@ -199,6 +200,8 @@ export default function PurchaseReturn({
     const [showReceiveConfirmDialog, setShowReceiveConfirmDialog] = useState(false);
     const [receiveDate, setReceiveDate] = useState("");
     const [pendingReceiveData, setPendingReceiveData] = useState<any>(null);
+
+    const [showPOMonitoringDialog, setShowPOMonitoringDialog] = useState(false);
 
     // Mock data
     const filteredData: any[] = [];
@@ -543,7 +546,7 @@ const formatNumber = (value: number): string => {
         const month = String(today.getMonth() + 1).padStart(2, "0");
         const sequential = String(sequentialNum).padStart(4, "0");
 
-        return `PN/${ptInitial.toUpperCase()}.D0/${lastTwoDigitsYear}${month}/${sequential}`;
+        return `PR/${ptInitial.toUpperCase()}.D0/${lastTwoDigitsYear}${month}/${sequential}`;
     };
 
     return (
@@ -1001,7 +1004,7 @@ const formatNumber = (value: number): string => {
                                             <div className="flex items-center gap-2 mb-1">
                                                 <Hash className="w-4 h-4 text-gray-400 flex-shrink-0" />
                                                 <span className="text-gray-900 font-mono">
-                                                    {generatePRNumber("MJS", 1)}
+                                                    {pr.prNo}
                                                 </span>
                                             </div>
                                             <div className="flex items-center gap-2">
@@ -1239,6 +1242,19 @@ const formatNumber = (value: number): string => {
                                                     </span>
                                                 </Button>
 
+                                                 {/* Monitoring button */}
+                                                                <Button
+                                                                  onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setSelectedDetail(pr);
+                                                                    setShowPOMonitoringDialog(true);
+                                                                  }}
+                                                                  className="bg-purple-600 hover:bg-purple-700"
+                                                                >
+                                                                  <Receipt className="w-4 h-4 mr-2" />
+                                                                  Monitoring
+                                                                </Button>
+
 
 
 
@@ -1335,17 +1351,7 @@ const formatNumber = (value: number): string => {
                                     Items
                                 </button>
 
-                                <button
-                                    onClick={() =>
-                                        setActiveDetailTab("ActivityLog")
-                                    }
-                                    className={`px-4 py-2 text-sm font-medium ${activeDetailTab === "ActivityLog"
-                                        ? "text-purple-700 border-b-2 border-purple-600 bg-purple-50"
-                                        : "text-gray-500 hover:text-purple-700 hover:bg-purple-50"
-                                        }`}
-                                >
-                                    Activity Log
-                                </button>
+                                
                             </div>
                         </div>
 
@@ -3132,7 +3138,20 @@ const formatNumber = (value: number): string => {
           </div>
         </DialogContent>
       </Dialog>
-
+                
+      {/* Document Monitoring Dialog */}
+      <DocumentMonitoringDialog
+        open={showPOMonitoringDialog}
+        onOpenChange={setShowPOMonitoringDialog}
+        po={mockPurchaseOrder?.find((po: any) => po.purchaseOrderNo === selectedDetail?.poNo) || { purchaseOrderNo: selectedDetail?.poNo }}
+        mockItems={mockItems}
+        isPOCreated={(poNumber: string) => mockPurchaseOrder?.some((po: any) => po.purchaseOrderNo === poNumber) || false}
+        getEffectivePOStatus={(po: any, items: any[]) => po?.status || "Draft"}
+        formatDateToDDMMYYYY={formatDateToDDMMYYYY}
+        piNumber={selectedDetail?.piNo || selectedDetail?.prNo || ""}
+        formatCurrency={formatCurrency}
+        initialActiveStep="pr"
+      />
 
     </div>
   );

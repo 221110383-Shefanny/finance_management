@@ -52,6 +52,7 @@ export default function PurchaseOrder({
   onNavigateToAPNote,
   onNavigateToPurchaseReturn,
   onNavigateToPV,
+  onNavigateToReimburse,
   refreshKey: externalRefreshKey,
 }: {
   selectedPONo?: string | null;
@@ -64,6 +65,7 @@ export default function PurchaseOrder({
   onNavigateToAPNote?: (apNoteId: string) => void;
   onNavigateToPurchaseReturn?: (prNo: string) => void;
   onNavigateToPV?: (pvNo: string) => void;
+  onNavigateToReimburse?: (reimburseNo: string) => void;
   refreshKey?: number;
 } = {}) {
   const [searchQuery, setSearchQuery] = useState("");
@@ -148,9 +150,11 @@ export default function PurchaseOrder({
           po.purchaseOrderNo === selectedPONo,
       );
       if (foundPO) {
-        const newExpanded = new Set(expandedPOIds);
-        newExpanded.add(foundPO.poId || foundPO.id);
-        setExpandedPOIds(newExpanded);
+        setExpandedPOIds((prev) => {
+          const next = new Set(prev);
+          next.add(foundPO.poId || (foundPO as any).id);
+          return next;
+        });
       }
     }
   }, [selectedPONo]);
@@ -159,19 +163,20 @@ export default function PurchaseOrder({
   useEffect(() => {
     const handleNavigateToPO = (event: Event) => {
       const customEvent = event as CustomEvent;
-      const { poNo } = customEvent.detail;
+      // Accept both docNo and poNo for compatibility
+      const poNo = customEvent.detail.poNo || customEvent.detail.docNo;
 
-      console.log(
-        "=== PurchaseOrder navigateToPurchaseOrder event ===",
-        poNo,
-      );
-      console.log("Available mockData count:", mockData.length);
-      console.log(
-        "First few PO numbers:",
-        mockData
-          .slice(0, 3)
-          .map((po: any) => po.purchaseOrderNo),
-      );
+      console.log("=== PO NAVIGATION EVENT ===", poNo);
+
+      // RESET ALL FILTERS TO ENSURE THE TARGET PO IS IN THE LIST
+      setSearchQuery("");
+      setStatusFilter("all");
+      setPtFilter("all");
+      setTermFilter("all");
+      setVendorOriginFilter("all");
+      setCalendarDateFrom("");
+      setCalendarDateTo("");
+      setCalendarUseTodayDate(false);
 
       // Find the PO with matching number (use purchaseOrderNo, not noPO)
       const matchingPO = mockData.find(
@@ -179,46 +184,32 @@ export default function PurchaseOrder({
       );
 
       if (matchingPO) {
-        console.log(
-          "Found matching PO:",
-          matchingPO.purchaseOrderNo,
-          "ID:",
-          matchingPO.poId || matchingPO.id,
-        );
-        // Expand the matching PO card
         const poIdToSet = matchingPO.poId || matchingPO.id;
-        const newExpanded = new Set(expandedPOIds);
-        newExpanded.add(poIdToSet);
-        setExpandedPOIds(newExpanded);
-        console.log(
-          "✅ Added to expandedPOIds:",
-          poIdToSet,
-        );
+        
+        // Use functional state update to avoid stale expandedPOIds closure
+        setExpandedPOIds((prev) => {
+          const newSet = new Set(prev);
+          newSet.add(poIdToSet);
+          return newSet;
+        });
 
-        // Scroll to the card after DOM updates
+        // Use a longer timeout (500ms) to allow the DOM to re-render 
+        // after filters are cleared and expansion starts
         setTimeout(() => {
           const element = document.getElementById(
             `po-card-${matchingPO.purchaseOrderNo}`,
           );
-          console.log(
-            "Looking for element:",
-            `po-card-${matchingPO.purchaseOrderNo}`,
-            "Found:",
-            !!element,
-          );
+          
           if (element) {
+            console.log("✅ Element found, scrolling to:", matchingPO.purchaseOrderNo);
             element.scrollIntoView({
               behavior: "smooth",
               block: "center",
             });
+          } else {
+            console.warn("❌ Auto-scroll failed: Element not found even after filter reset.");
           }
-        }, 100);
-      } else {
-        console.warn("No matching PO found for poNo:", poNo);
-        console.warn(
-          "Available purchaseOrderNo values:",
-          mockData.map((po: any) => po.purchaseOrderNo),
-        );
+        }, 500);
       }
     };
 
@@ -233,7 +224,7 @@ export default function PurchaseOrder({
         handleNavigateToPO,
       );
     };
-  }, [mockData]);
+  }, [mockData]); // mockData depends on mockLinkedPOs which is stable
 
   const getPTCompany = (noPO: string) => {
     if (!noPO || typeof noPO !== "string") {
@@ -610,6 +601,7 @@ export default function PurchaseOrder({
               onNavigateToAPNote={onNavigateToAPNote}
               onNavigateToPurchaseReturn={onNavigateToPurchaseReturn}
               onNavigateToPV={onNavigateToPV}
+              onNavigateToReimburse={onNavigateToReimburse}
             />
           </div>
         ))}

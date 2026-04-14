@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
+import { DocumentMonitoringDialog } from "./DocumentMonitoringDialog";
 import {
   formatDateToDDMMYYYY,
   getTodayYYYYMMDD,
@@ -179,6 +180,7 @@ export default function ShipmentRequest({
   onNavigateToPVR,
 }: ShipmentRequestProps = {}) {
   // Initialize with empty array - will load data in useEffect
+  const [showMonitoringDialog, setShowMonitoringDialog] = useState(false);
   const [shipmentRequestData, setShipmentRequestData] =
     useState<ShipmentRequestData[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -1840,6 +1842,19 @@ export default function ShipmentRequest({
                         >
                           <Receipt className="w-4 h-4 mr-2" />
                           PVR
+                        </Button>
+
+                        {/* Monitoring button */}
+                        <Button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedDetail(item);
+                            setShowPOMonitoringDialog(true);
+                          }}
+                          className="bg-purple-600 hover:bg-purple-700"
+                        >
+                          <Receipt className="w-4 h-4 mr-2" />
+                          Monitoring
                         </Button>
 
                         {/* Void button */}
@@ -4071,5 +4086,7 @@ export default function ShipmentRequest({
       />
     </div>
 
+
   );
+  
 }

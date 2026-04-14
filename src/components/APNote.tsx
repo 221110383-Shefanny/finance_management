@@ -423,6 +423,11 @@ const convertToISODate = (dateString: string): string => {
   interface SupplierListInfo extends SupplierData {}
 
   const supplierMasterData: SupplierData[] = [
+     {
+      name: "PT. Maju Jaya",
+      category: "LOCAL",
+      availableDocuments: [],
+    },
     {
       name: "PT. Logistik Prima",
       category: "LOCAL",
@@ -623,8 +628,13 @@ export default function APNote({
       useState(false);
     const [showNoLinkedDocsWarning, setShowNoLinkedDocsWarning] =
       useState(false);
+    const [showInvoiceExistsWarning, setShowInvoiceExistsWarning] =
+      useState(false);
     const [showVoidDialog, setShowVoidDialog] = useState(false);
     const [selectedForVoid, setSelectedForVoid] =
+      useState<APNoteData | null>(null);
+    const [showRestoreDialog, setShowRestoreDialog] = useState(false);
+    const [selectedForRestore, setSelectedForRestore] =
       useState<APNoteData | null>(null);
     const [showLinkedDocsDialog, setShowLinkedDocsDialog] =
       useState(false);
@@ -1621,6 +1631,18 @@ export default function APNote({
 
     // Handler to save AP Note without linked documents
     const handleSaveWithoutLinkedDocs = () => {
+      // Check if invoice number already exists for this supplier
+      const existingInvoice = apNoteData.find(
+        (note) =>
+          note.supplierName === apNoteForm.supplierName &&
+          note.invoiceNumber === apNoteForm.invoiceNumber,
+      );
+      if (existingInvoice) {
+        setShowInvoiceExistsWarning(true);
+        setShowNoLinkedDocsWarning(false); // Close the no linked docs dialog
+        return;
+      }
+
       // Generate AP Note Number before creating
       const generatedApNoteNo = generateAPNoteNo();
 
@@ -1725,6 +1747,91 @@ export default function APNote({
       setActiveDetailTab("items");
     };
     const handleCreateAPNote = () => {
+      // Helper function to normalize supplier names for comparison
+      const normalizeSupplierName = (name: string) => {
+        return name?.trim().toLowerCase().replace(/\./g, '').replace(/\s+/g, ' ') || '';
+      };
+
+      // Check if invoice number already exists for this supplier in current data
+      console.log('=== DUPLICATE CHECK DEBUG ===');
+      console.log('Form supplierName:', apNoteForm.supplierName);
+      console.log('Form invoiceNumber:', apNoteForm.invoiceNumber);
+      console.log('apNoteData length:', apNoteData.length);
+      console.log('apNoteData:', apNoteData.map(note => ({ supplier: note.supplierName, invoice: note.invoiceNumber })));
+
+      const normalizedFormSupplier = normalizeSupplierName(apNoteForm.supplierName);
+      const normalizedFormInvoice = apNoteForm.invoiceNumber?.trim().toLowerCase() || '';
+
+      // Check in current apNoteData
+      const existingInvoiceInCurrent = apNoteData.find(
+        (note) => {
+          const normalizedNoteSupplier = normalizeSupplierName(note.supplierName);
+          const normalizedNoteInvoice = note.invoiceNumber?.trim().toLowerCase() || '';
+          const supplierMatch = normalizedNoteSupplier === normalizedFormSupplier;
+          const invoiceMatch = normalizedNoteInvoice === normalizedFormInvoice;
+          console.log(`Checking note: supplier="${note.supplierName}" invoice="${note.invoiceNumber}" - normalized: "${normalizedNoteSupplier}" vs "${normalizedFormSupplier}" - supplierMatch:${supplierMatch} invoiceMatch:${invoiceMatch}`);
+          return supplierMatch && invoiceMatch;
+        }
+      );
+
+      if (existingInvoiceInCurrent) {
+        console.log('Duplicate found in current data:', existingInvoiceInCurrent);
+        setShowInvoiceExistsWarning(true);
+        return;
+      }
+
+      // Check in stored data (localStorage)
+      let storedAPNotes: APNoteData[] = [];
+
+      // Check apNote_data
+      const storedApNoteData = localStorage.getItem("apNote_data");
+      if (storedApNoteData) {
+        try {
+          const parsed = JSON.parse(storedApNoteData);
+          if (Array.isArray(parsed)) {
+            storedAPNotes = [...storedAPNotes, ...parsed];
+          }
+        } catch (e) {
+          console.error("Failed to parse apNote_data:", e);
+        }
+      }
+
+      // Check createdAPNotes
+      const createdAPNotes = localStorage.getItem("createdAPNotes");
+      if (createdAPNotes) {
+        try {
+          const parsed = JSON.parse(createdAPNotes);
+          if (Array.isArray(parsed)) {
+            storedAPNotes = [...storedAPNotes, ...parsed];
+          }
+        } catch (e) {
+          console.error("Failed to parse createdAPNotes:", e);
+        }
+      }
+
+      console.log('Stored AP Notes length:', storedAPNotes.length);
+      console.log('Stored AP Notes:', storedAPNotes.map(note => ({ supplier: note.supplierName, invoice: note.invoiceNumber })));
+
+      // Check for duplicates in stored data
+      const existingInvoiceInStorage = storedAPNotes.find(
+        (note) => {
+          const normalizedNoteSupplier = normalizeSupplierName(note.supplierName);
+          const normalizedNoteInvoice = note.invoiceNumber?.trim().toLowerCase() || '';
+          const supplierMatch = normalizedNoteSupplier === normalizedFormSupplier;
+          const invoiceMatch = normalizedNoteInvoice === normalizedFormInvoice;
+          console.log(`Checking stored note: supplier="${note.supplierName}" invoice="${note.invoiceNumber}" - normalized: "${normalizedNoteSupplier}" vs "${normalizedFormSupplier}" - supplierMatch:${supplierMatch} invoiceMatch:${invoiceMatch}`);
+          return supplierMatch && invoiceMatch;
+        }
+      );
+
+      if (existingInvoiceInStorage) {
+        console.log('Duplicate found in storage:', existingInvoiceInStorage);
+        setShowInvoiceExistsWarning(true);
+        return;
+      }
+
+      console.log('No duplicates found, proceeding with creation');
+
       // Check if linked documents are actually filled (have documentNo)
       const hasFilledLinkedDocs = linkedDocs.some(
         (doc) => doc.documentNo && doc.documentNo.trim() !== "",
@@ -2754,10 +2861,15 @@ export default function APNote({
                                 <div className="hidden md:flex items-center gap-2 flex-shrink-0">
                                   <Badge
                                     variant="outline"
-                                    className="bg-red-100 text-red-700 border-red-200"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedForRestore(item);
+                                      setShowRestoreDialog(true);
+                                    }}
+                                    className="bg-red-100 text-red-700 border-red-200 cursor-pointer hover:bg-red-200"
                                   >
                                     <XCircle className="w-3 h-3 mr-1" />
-                                    Void
+                                    Voided
                                   </Badge>
                                 </div>
                               )}
@@ -2918,23 +3030,33 @@ export default function APNote({
                                   <Button
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      if (!item.isVoided) {
+                                      if (item.isVoided) {
+                                        setSelectedForRestore(item);
+                                        setShowRestoreDialog(true);
+                                      } else {
                                         setSelectedForVoid(item);
                                         setShowVoidDialog(true);
                                       }
                                     }}
-                                    disabled={item.isVoided}
                                     variant="outline"
+                                    disabled={item.isVoided}
                                     className={
                                       item.isVoided
-                                        ? "border-red-200 text-red-700 cursor-not-allowed bg-red-50"
+                                        ? "border-red-200 text-red-700 hover:bg-red-50"
                                         : "border-red-200 text-red-700 hover:bg-red-50"
                                     }
                                   >
-                                    <XCircle className="w-4 h-4 mr-2" />
-                                    {item.isVoided
-                                      ? "Voided"
-                                      : "Void"}
+                                    {item.isVoided ? (
+                                      <>
+                                        <XCircle className="w-4 h-4 mr-2" />
+                                        Voided
+                                      </>
+                                    ) : (
+                                      <>
+                                        <XCircle className="w-4 h-4 mr-2" />
+                                        Void
+                                      </>
+                                    )}
                                   </Button>
                                 </div>
                               </div>
@@ -3799,7 +3921,7 @@ export default function APNote({
                               {/* Invoice Number */}
                               <div>
                                 <div className="text-xs text-purple-600 mb-1">
-                                  Reference Number (ini nanti
+                                  Invoice Number (ini nanti
                                   bakalan panjang juga){" "}
                                   <span className="text-red-500">
                                     *
@@ -7052,6 +7174,7 @@ export default function APNote({
               </DialogContent>
             </Dialog>
 
+         
             {/* Create Expense Note Dialog */}
             <Dialog
               open={showCreateDialog}
@@ -7067,6 +7190,12 @@ export default function APNote({
                   </DialogTitle>
                   <DialogDescription>
                     Fill in the details to create a new Expense Note
+                    {/* Developer Note*/} 
+                  <p className="mt-2 text-xs text-red-500 italic"> 
+                    Note for User : Invoice Number cek double / existed - pakai Vendor Maju Jaya | No Invoice : INV-2025-0146
+
+                  </p>
+              
                   </DialogDescription>
                 </DialogHeader>
                 {/* Main container with flex layout */}
@@ -9269,7 +9398,48 @@ export default function APNote({
                     </div>
 
                     {/* Submit Button - Always at bottom */}
+                    
                     <div className="flex justify-end gap-2">
+                          <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      // Autofill with test data
+                      setApNoteForm({
+                        supplierName: "PT. Maju Jaya",
+                        term: "CREDIT",
+                        currency: "IDR",
+                        pt: "MJS",
+                        documentReceivedDate: "26/02/2026",
+                        apNoteDate: "26/02/2026",
+                        invoiceNumber: "INV-2025-0146",
+                        remarks: "Test autofill data",
+                        discount: 0,
+                        tax: 0,
+                        pph: 0,
+                        apNoteType: "MDN",
+                      });
+                      setIsSupplierSelected(true);
+                      // Add a sample account item
+                      setAccountItems([
+                        {
+                          id: Date.now().toString(),
+                          accountCode: "100.001.01",
+                          accountName: "KAS MEDAN (IDR)",
+                          deptDescription: "MULTI JAYA SAMUDERA : KAPAL: TUG BOAT: TB.WARUNA PIONEER :  DECK",
+                          qty: 1,
+                          unitPrice: 1000000,
+                          totalAmount: 1000000,
+                          description: "Test item",
+                          category: "Test",
+                          department: "2.2.04.060.01",
+                        }
+                      ]);
+                    }}
+                    className=" bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100"
+                  >
+                    Autofill Test Data
+                  </Button>
                       <Button
                         variant="outline"
                         onClick={() => {
@@ -9620,6 +9790,48 @@ export default function APNote({
                       className="bg-yellow-600 hover:bg-yellow-700"
                     >
                       Yes, Continue
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            {/* Invoice Exists Warning Dialog */}
+            <Dialog
+              open={showInvoiceExistsWarning}
+              onOpenChange={setShowInvoiceExistsWarning}
+            >
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle className="text-red-900 flex items-center gap-2">
+                    <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
+                      <svg
+                        className="w-5 h-5 text-red-600"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 8v4m0 4v.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                        />
+                      </svg>
+                    </div>
+                    Invoice Number Already Exists
+                  </DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <p className="text-gray-600">
+                    The invoice number "{apNoteForm.invoiceNumber}" already exists for supplier "{apNoteForm.supplierName}". Please use a different invoice number.
+                  </p>
+                  <div className="flex gap-2 justify-end">
+                    <Button
+                      onClick={() => setShowInvoiceExistsWarning(false)}
+                      className="bg-red-600 hover:bg-red-700"
+                    >
+                      OK
                     </Button>
                   </div>
                 </div>
